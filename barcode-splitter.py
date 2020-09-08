@@ -2,7 +2,7 @@ import argparse
 import os
 import pandas as pd
 import gzip
-from itertools import islice
+from itertools import zip_longest
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-c", help="Barcode association table, csv format", required = True)
@@ -29,7 +29,14 @@ indexes = df.to_dict('index')
 #like
 # {'11-A12_reseq1': {'idx1': 'CTTGTACT', 'idx2': 'ATCACGAT'}, '9-H9_reseq1': {'idx1': 'GATCAGCG', 'idx2': 'ACTTGAAT'}}
 
+def grouper(iterable, n, fillvalue=None):
+    "Collect data into fixed-length chunks or blocks"
+    # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
+    args = [iter(iterable)] * n
+    return zip_longest(*args, fillvalue=fillvalue)
+
 with gzip.open(args.r1, 'rt') as read1:
-    id,seq,plus,qual = islice(read1, 4)
-    bc1, bc2 = id.split(":")[-1].split("+")
-    if bc1 in 
+    for record in grouper(read1, 4, ''):
+        assert len(record) == 4
+        print(record[0].split(':')[-1].split("+"))
+
