@@ -21,13 +21,11 @@ except OSError as e:
         raise
 
 #read barcode association file:
-df = pd.read_csv(args.c, header=0, names=['id', 'idx1', 'idx2']).set_index('id')
+indexes = pd.read_csv(args.c, header=0, names=['id', 'idx1', 'idx2']).set_index('id')
 #todo: handle single index
 #todo: check that barcodes are all same length, match [ACTGactg]
-indexes = df.to_dict('index')
 
-#like
-# {'11-A12_reseq1': {'idx1': 'CTTGTACT', 'idx2': 'ATCACGAT'}, '9-H9_reseq1': {'idx1': 'GATCAGCG', 'idx2': 'ACTTGAAT'}}
+print(indexes['idx1'].tolist())
 
 def grouper(iterable, n, fillvalue=None):
     "Collect data into fixed-length chunks or blocks"
@@ -38,5 +36,7 @@ def grouper(iterable, n, fillvalue=None):
 with gzip.open(args.r1, 'rt') as read1:
     for record in grouper(read1, 4, ''):
         assert len(record) == 4
-        print(record[0].split(':')[-1].split("+"))
-
+        idx1 = record[0].split(":")[-1].split("+")[0].rstrip('\n')
+        idx2 = record[0].split(":")[-1].split("+")[1].rstrip('\n')
+        if idx1 in indexes['idx1'].tolist():
+            print(idx1, idx2)
