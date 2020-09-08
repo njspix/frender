@@ -29,6 +29,7 @@ indexes = df.to_dict('index')
 #like
 # {'11-A12_reseq1': {'idx1': 'CTTGTACT', 'idx2': 'ATCACGAT'}, '9-H9_reseq1': {'idx1': 'GATCAGCG', 'idx2': 'ACTTGAAT'}}
 
-with gzip.open(args.r1, 'rb') as read1:
-    lines_gen = islice(read1, 4)
-    for line in lines_gen: print(line)
+with gzip.open(args.r1, 'rt') as read1:
+    id,seq,plus,qual = islice(read1, 4)
+    bc1, bc2 = id.split(":")[-1].split("+")
+    if bc1 in 
