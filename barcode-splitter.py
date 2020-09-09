@@ -3,12 +3,13 @@ import os
 import pandas as pd
 import gzip
 from itertools import zip_longest
+import regex
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-c", help="Barcode association table, csv format", required = True)
-parser.add_argument("-r1", help="Undetermined read 1", required = True)
+parser.add_argument("-c", help = "Barcode association table, csv format", required = True)
+parser.add_argument("-r1", help = "Undetermined read 1", required = True)
 #todo: make this optional
-parser.add_argument("-r2", help="Undetermined read 2", required = True)
+parser.add_argument("-r2", help = "Undetermined read 2", required = True)
 parser.add_argument("-o", help = "output files directory", default = './split_files/')
 
 args = parser.parse_args()
@@ -33,6 +34,12 @@ def grouper(iterable, n, fillvalue=None):
     args = [iter(iterable)] * n
     return zip_longest(*args, fillvalue=fillvalue)
 
+def fuz_match_set(pattern, set_of_strings):
+    "Given a query string and a list/set of strings, return a list denoting whether the query string +/- 1 substitution is found in each item"
+    pattern = regex.compile("(?:"+pattern+"){s<=1}", regex.IGNORECASE)
+    matches = [bool(regex.match(pattern, list_of_strings[i])) for i in range (len(list_of_strings))]
+    return matches
+
 with gzip.open(args.r1, 'rt') as read1:
     for record in grouper(read1, 4, ''):
         assert len(record) == 4
@@ -40,3 +47,5 @@ with gzip.open(args.r1, 'rt') as read1:
         idx2 = record[0].split(":")[-1].split("+")[1].rstrip('\n')
         if idx1 in indexes['idx1'].tolist():
             print(idx1, idx2)
+
+
