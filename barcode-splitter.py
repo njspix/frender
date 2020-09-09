@@ -23,6 +23,8 @@ except OSError as e:
 
 #read barcode association file:
 indexes = pd.read_csv(args.c, header=0, names=['id', 'idx1', 'idx2']).set_index('id')
+uniq_idx1 = list(set(indexes['idx1'].tolist()))
+uniq_idx2 = list(set(indexes['idx2'].tolist()))
 #todo: handle single index
 #todo: check that barcodes are all same length, match [ACTGactg]
 
@@ -43,7 +45,8 @@ with gzip.open(args.r1, 'rt') as read1:
         assert len(record) == 4
         idx1 = record[0].split(":")[-1].split("+")[0].rstrip('\n')
         idx2 = record[0].split(":")[-1].split("+")[1].rstrip('\n')
-        if sum(fuz_match_set(idx1, list(set(indexes['idx1'].tolist()))))==1:
-            print(idx1, idx2)
+        if sum(fuz_match_set(idx1, uniq_idx1))==1: 
+            if sum(fuz_match_set(idx2, uniq_idx2))==1: # set() unique-ifies the list; then have to re-list() it
+                print(idx1, idx2)
 
 
