@@ -26,8 +26,6 @@ indexes = pd.read_csv(args.c, header=0, names=['id', 'idx1', 'idx2']).set_index(
 #todo: handle single index
 #todo: check that barcodes are all same length, match [ACTGactg]
 
-print(indexes['idx1'].tolist())
-
 def grouper(iterable, n, fillvalue=None):
     "Collect data into fixed-length chunks or blocks"
     # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
@@ -37,7 +35,7 @@ def grouper(iterable, n, fillvalue=None):
 def fuz_match_set(pattern, set_of_strings):
     "Given a query string and a list/set of strings, return a list denoting whether the query string +/- 1 substitution is found in each item"
     pattern = regex.compile("(?:"+pattern+"){s<=1}", regex.IGNORECASE)
-    matches = [bool(regex.match(pattern, list_of_strings[i])) for i in range (len(list_of_strings))]
+    matches = [bool(regex.match(pattern, set_of_strings[i])) for i in range (len(set_of_strings))]
     return matches
 
 with gzip.open(args.r1, 'rt') as read1:
@@ -45,7 +43,7 @@ with gzip.open(args.r1, 'rt') as read1:
         assert len(record) == 4
         idx1 = record[0].split(":")[-1].split("+")[0].rstrip('\n')
         idx2 = record[0].split(":")[-1].split("+")[1].rstrip('\n')
-        if idx1 in indexes['idx1'].tolist():
+        if sum(fuz_match_set(idx1, list(set(indexes['idx1'].tolist()))))==1:
             print(idx1, idx2)
 
 
