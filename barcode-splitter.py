@@ -58,7 +58,7 @@ with gzip.open(args.f, 'rt') as read1:
             #print(idx1, idx2)
             if len(set(idx1_matches).intersection(idx2_matches)) == 0: # index hop
                 try:
-                    hops.loc[set([all_idx1[i] for i in idx1_matches]).pop(),set([all_idx2[i] for i in idx2_matches]).pop()] += 1
+                    hops.loc[set([all_idx1[i] for i in idx1_matches]).pop(),set([all_idx2[i] for i in idx2_matches]).pop()] += 1 
                 except KeyError: #this combination of indices hasn't been initialized
                     hops.loc[set([all_idx1[i] for i in idx1_matches]).pop(),set([all_idx2[i] for i in idx2_matches]).pop()] = 1
             elif len(set(idx1_matches).intersection(idx2_matches)) == 1: # good read; idx1 and idx2 line up in one spot
@@ -72,7 +72,10 @@ with gzip.open(args.f, 'rt') as read1:
 for i in range(len(ids)):
     ids[i].close()
 
-hops.to_csv(f'{args.o}barcode_hops.csv')
+hops = hops.reset_index().melt(id_vars = 'index', var_name='idx2', value_name= 'num_hops_observed')
+hops = hops[hops['num_hops_observed'] > 0]
+hops.columns = ['idx1', 'idx2', 'num_hops_observed']
+hops.to_csv(f'{args.o}barcode_hops.csv', index = False)
 
 #todo: logic to prevent duplication of effort: store 'known' barcodes in a dict as you read the file.
 #then, consult the list before processing the record.

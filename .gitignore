@@ -20,3 +20,6 @@ split_files/a1_idx1.txt
 split_files/a1_idx2.txt
 split_files/barcode_hops.csv
 
+short.fq
+short.fq.gz
+
