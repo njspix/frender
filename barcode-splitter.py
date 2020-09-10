@@ -7,26 +7,30 @@ import regex
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-c", help = "Barcode association table, csv format", required = True)
-parser.add_argument("-r1", help = "Undetermined read 1", required = True)
-#todo: make this optional
-parser.add_argument("-r2", help = "Undetermined read 2", required = True)
-parser.add_argument("-o", help = "output files directory", default = './split_files/')
+parser.add_argument("-f", help = "Undetermined fastq", required = True)
+parser.add_argument("-o", help = "output files directory", default = './split_files')
 
 args = parser.parse_args()
 
+#read barcode association file:
+indexes = pd.read_csv(args.c, header=0, names=['id', 'idx1', 'idx2']).set_index('id')
+all_idx1 = indexes['idx1'].tolist() 
+all_idx2 = indexes['idx2'].tolist()
+ids = list(indexes.index)
+#todo: handle single index
+#todo: check that barcodes are all same length, match [ACTGactg]
+
 # create output dir
+args.o = args.o.rstrip('/')+'/' #add trailing slash just to make sure
 try:
     os.makedirs(args.o)
 except OSError as e:
     if e.errno != 17: #17 = file exists
         raise
 
-#read barcode association file:
-indexes = pd.read_csv(args.c, header=0, names=['id', 'idx1', 'idx2']).set_index('id')
-all_idx1 = indexes['idx1'].tolist() 
-all_idx2 = indexes['idx2'].tolist()
-#todo: handle single index
-#todo: check that barcodes are all same length, match [ACTGactg]
+#open output files:
+for i in range(len(ids)):
+    ids[i] = open(f'{args.o}{ids[i]}.fastq', 'w')
 
 def grouper(iterable, n, fillvalue=None):
     "Collect data into fixed-length chunks or blocks"
@@ -43,7 +47,7 @@ def fuz_match_list(pattern, set_of_strings):
 
 hops = pd.DataFrame()
 
-with gzip.open(args.r1, 'rt') as read1:
+with gzip.open(args.f, 'rt') as read1:
     for record in grouper(read1, 4, ''):
         assert len(record) == 4
         idx1 = record[0].split(":")[-1].split("+")[0].rstrip('\n')
@@ -55,16 +59,20 @@ with gzip.open(args.r1, 'rt') as read1:
             if len(set(idx1_matches).intersection(idx2_matches)) == 0: # index hop
                 try:
                     hops.loc[set([all_idx1[i] for i in idx1_matches]).pop(),set([all_idx2[i] for i in idx2_matches]).pop()] += 1
-                except KeyError:
+                except KeyError: #this combination of indices hasn't been initialized
                     hops.loc[set([all_idx1[i] for i in idx1_matches]).pop(),set([all_idx2[i] for i in idx2_matches]).pop()] = 1
             elif len(set(idx1_matches).intersection(idx2_matches)) == 1: # good read; idx1 and idx2 line up in one spot
-                # print(indexes.iloc[set(idx1_matches).intersection(idx2_matches).pop()]) #this logic might be faulty
-                pass
+                demux_id = indexes.index[set(idx1_matches).intersection(idx2_matches).pop()]
+                for line in record:
+                    ids[indexes.index.get_loc(demux_id)].write(str(line))
             else:
                 raise NameError('more than one unique match for barcodes!')
 
-print(hops)
+#close output files:
+for i in range(len(ids)):
+    ids[i].close()
 
+hops.to_csv(f'{args.o}barcode_hops.csv')
 
 #todo: logic to prevent duplication of effort: store 'known' barcodes in a dict as you read the file.
 #then, consult the list before processing the record.
