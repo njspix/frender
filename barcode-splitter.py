@@ -7,8 +7,7 @@ import regex
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-c", help = "Barcode association table, csv format", required = True)
-parser.add_argument("-r1", help = "Undetermined fastq read 1", required = True)
-parser.add_argument("-r2", help = "Undetermined fastq read 2", required = True)
+parser.add_argument("fastqs", nargs= 2, required = True)
 parser.add_argument("-o", help = "output files directory", default = './split_files')
 
 args = parser.parse_args()
@@ -58,8 +57,8 @@ def fuz_match_list(pattern, set_of_strings):
 
 hops = pd.DataFrame()
 
-with gzip.open(args.r1, 'rt') as read1:
-    with gzip.open(args.r2, 'rt') as read2:
+with gzip.open(args.fastqs[0], 'rt') as read1:
+    with gzip.open(args.fastqs[1], 'rt') as read2:
         reads_1 = grouper(read1, 4, '')
         reads_2 = grouper(read2, 4, '')
 
