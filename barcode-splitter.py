@@ -22,6 +22,7 @@ ids = list(indexes.index)
 
 # create output dir
 args.o = args.o.rstrip('/')+'/' #add trailing slash just to make sure
+#todo: what if this doesn't start with './'?
 try:
     os.makedirs(args.o)
 except OSError as e:
@@ -31,6 +32,9 @@ except OSError as e:
 #open output files:
 for i in range(len(ids)):
     ids[i] = open(f'{args.o}{ids[i]}.fastq', 'w')
+
+undeter = open(f'{args.o}undetermined.fastq', 'w')
+hop = open(f'{args.o}hop.fastq', 'w')
 
 def grouper(iterable, n, fillvalue=None):
     "Collect data into fixed-length chunks or blocks"
@@ -57,6 +61,10 @@ with gzip.open(args.f, 'rt') as read1:
         if (bool(idx1_matches) & bool(idx2_matches)):
             #print(idx1, idx2)
             if len(set(idx1_matches).intersection(idx2_matches)) == 0: # index hop
+
+                for line in record:
+                    hop.write(str(line))
+
                 try:
                     hops.loc[set([all_idx1[i] for i in idx1_matches]).pop(),set([all_idx2[i] for i in idx2_matches]).pop()] += 1 
                 except KeyError: #this combination of indices hasn't been initialized
@@ -67,10 +75,15 @@ with gzip.open(args.f, 'rt') as read1:
                     ids[indexes.index.get_loc(demux_id)].write(str(line))
             else:
                 raise NameError('more than one unique match for barcodes!')
+        else:
+            for line in record:
+                undeter.write(str(line))
 
 #close output files:
 for i in range(len(ids)):
     ids[i].close()
+hop.close()
+undeter.close()
 
 hops = hops.reset_index().melt(id_vars = 'index', var_name='idx2', value_name= 'num_hops_observed')
 hops = hops[hops['num_hops_observed'] > 0]
