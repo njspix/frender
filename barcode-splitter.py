@@ -7,7 +7,8 @@ import regex
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-c", help = "Barcode association table, csv format", required = True)
-parser.add_argument("-f", help = "Undetermined fastq", required = True)
+parser.add_argument("-r1", help = "Undetermined fastq read 1", required = True)
+parser.add_argument("-r2", help = "Undetermined fastq read 2", required = True)
 parser.add_argument("-o", help = "output files directory", default = './split_files')
 
 args = parser.parse_args()
@@ -29,12 +30,19 @@ except OSError as e:
     if e.errno != 17: #17 = file exists
         raise
 
+r1_files = []
+r2_files = []
+
 #open output files:
 for i in range(len(ids)):
-    ids[i] = open(f'{args.o}{ids[i]}.fastq', 'w')
+    r1_files.append(open(f'{args.o}{ids[i]}_R1.fastq', 'w'))
+for i in range(len(ids)):
+    r2_files.append((f'{args.o}{ids[i]}_R2.fastq', 'w'))
 
-undeter = open(f'{args.o}undetermined.fastq', 'w')
-hop = open(f'{args.o}hop.fastq', 'w')
+r1_undeter = open(f'{args.o}undetermined_R1.fastq', 'w')
+r2_undeter = open(f'{args.o}undetermined_R2.fastq', 'w')
+r1_hop = open(f'{args.o}hop_R1.fastq', 'w')
+r2_hop = open(f'{args.o}hop_R2.fastq', 'w')
 
 def grouper(iterable, n, fillvalue=None):
     "Collect data into fixed-length chunks or blocks"
@@ -51,39 +59,53 @@ def fuz_match_list(pattern, set_of_strings):
 
 hops = pd.DataFrame()
 
-with gzip.open(args.f, 'rt') as read1:
-    for record in grouper(read1, 4, ''):
-        assert len(record) == 4
-        idx1 = record[0].split(":")[-1].split("+")[0].rstrip('\n')
-        idx2 = record[0].split(":")[-1].split("+")[1].rstrip('\n')
-        idx1_matches = fuz_match_list(idx1, all_idx1)
-        idx2_matches = fuz_match_list(idx2, all_idx2) 
-        if (bool(idx1_matches) & bool(idx2_matches)):
-            #print(idx1, idx2)
-            if len(set(idx1_matches).intersection(idx2_matches)) == 0: # index hop
+with gzip.open(args.r1, 'rt') as read1:
+    with gzip.open(args.r2, 'rt') as read2:
+        reads_1 = grouper(read1, 4, '')
+        reads_2 = grouper(read2, 4, '')
 
-                for line in record:
-                    hop.write(str(line))
+        for record_1,record_2 in zip(reads_1,reads_2):
+            assert len(record_1) == 4
+            idx1 = record_1[0].split(":")[-1].split("+")[0].rstrip('\n')
+            idx2 = record_1[0].split(":")[-1].split("+")[1].rstrip('\n')
+            idx1_matches = fuz_match_list(idx1, all_idx1)
+            idx2_matches = fuz_match_list(idx2, all_idx2) 
+            if (bool(idx1_matches) & bool(idx2_matches)):
+                #print(idx1, idx2)
+                if len(set(idx1_matches).intersection(idx2_matches)) == 0: # index hop
 
-                try:
-                    hops.loc[set([all_idx1[i] for i in idx1_matches]).pop(),set([all_idx2[i] for i in idx2_matches]).pop()] += 1 
-                except KeyError: #this combination of indices hasn't been initialized
-                    hops.loc[set([all_idx1[i] for i in idx1_matches]).pop(),set([all_idx2[i] for i in idx2_matches]).pop()] = 1
-            elif len(set(idx1_matches).intersection(idx2_matches)) == 1: # good read; idx1 and idx2 line up in one spot
-                demux_id = indexes.index[set(idx1_matches).intersection(idx2_matches).pop()]
-                for line in record:
-                    ids[indexes.index.get_loc(demux_id)].write(str(line))
+                    for line in record_1:
+                        r1_hop.write(str(line))
+                    for line in record_2:
+                        r2_hop.write(str(line))
+
+                    try:
+                        hops.loc[set([all_idx1[i] for i in idx1_matches]).pop(),set([all_idx2[i] for i in idx2_matches]).pop()] += 1 
+                    except KeyError: #this combination of indices hasn't been initialized
+                        hops.loc[set([all_idx1[i] for i in idx1_matches]).pop(),set([all_idx2[i] for i in idx2_matches]).pop()] = 1
+                elif len(set(idx1_matches).intersection(idx2_matches)) == 1: # good read; idx1 and idx2 line up in one spot
+                    demux_id = indexes.index[set(idx1_matches).intersection(idx2_matches).pop()]
+                    for line in record_1:
+                        r1_files[indexes.index.get_loc(demux_id)].write(str(line))
+                    for line in record_2:
+                        r2_files[indexes.index.get_loc(demux_id)].write(str(line))
+                else:
+                    raise NameError('more than one unique match for barcodes!')
             else:
-                raise NameError('more than one unique match for barcodes!')
-        else:
-            for line in record:
-                undeter.write(str(line))
+                for line in record_1:
+                    r1_undeter.write(str(line))                
+                for line in record_2:
+                    r2_undeter.write(str(line))
 
 #close output files:
-for i in range(len(ids)):
-    ids[i].close()
-hop.close()
-undeter.close()
+for i in range(len(r1_files)):
+    r1_files[i].close()
+for i in range(len(r2_files)):
+    r2_files[i].close()
+r1_hop.close()
+r2_hop.close()
+r1_undeter.close()
+r2_undeter.close()
 
 hops = hops.reset_index().melt(id_vars = 'index', var_name='idx2', value_name= 'num_hops_observed')
 hops = hops[hops['num_hops_observed'] > 0]
