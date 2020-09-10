@@ -36,8 +36,7 @@ r2_files = []
 #open output files:
 for i in range(len(ids)):
     r1_files.append(open(f'{args.o}{ids[i]}_R1.fastq', 'w'))
-for i in range(len(ids)):
-    r2_files.append((f'{args.o}{ids[i]}_R2.fastq', 'w'))
+    r2_files.append(open(f'{args.o}{ids[i]}_R2.fastq', 'w'))
 
 r1_undeter = open(f'{args.o}undetermined_R1.fastq', 'w')
 r2_undeter = open(f'{args.o}undetermined_R2.fastq', 'w')
