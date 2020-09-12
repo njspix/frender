@@ -7,8 +7,12 @@ import regex
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-c", help = "Barcode association table, csv format", required = True)
+parser.add_argument("-o", help = "output files directory", default = ".")
+parser.add_argument("-p", "--prefix", help = "prefix to be added to demuxed output files and index hop summary")
+parser.add_argument("-h", "--hopfile", help = "(optional) output fastq for index hopped reads", default = "")
+parser.add_argument("-u", "--undetermined", help = "(optional) output fastq for remaining undetermined reads", default = "")
+parser.add_argument("-c", "--conflict", help = "(optional) output fastq for reads with conflicting barcodes", default = "")
 parser.add_argument("fastqs", nargs= 2, required = True)
-parser.add_argument("-o", help = "output files directory", default = './split_files')
 
 args = parser.parse_args()
 
@@ -29,18 +33,29 @@ except OSError as e:
     if e.errno != 17: #17 = file exists
         raise
 
+if args.p != "":
+    args.p = args.p+"_"
+
 r1_files = []
 r2_files = []
 
 #open output files:
 for i in range(len(ids)):
-    r1_files.append(open(f'{args.o}{ids[i]}_R1.fastq', 'w'))
-    r2_files.append(open(f'{args.o}{ids[i]}_R2.fastq', 'w'))
+    r1_files.append(open(f'{args.o}{args.p}{ids[i]}_R1.fastq', 'w'))
+    r2_files.append(open(f'{args.o}{args.p}{ids[i]}_R2.fastq', 'w'))
 
-r1_undeter = open(f'{args.o}undetermined_R1.fastq', 'w')
-r2_undeter = open(f'{args.o}undetermined_R2.fastq', 'w')
-r1_hop = open(f'{args.o}hop_R1.fastq', 'w')
-r2_hop = open(f'{args.o}hop_R2.fastq', 'w')
+if args.u != "" :
+    r1_undeter = open(f'{args.o}{args.u}', 'w')
+    r2_undeter = open(f'{args.o}{args.u}', 'w')
+
+if args.h != "" :
+    r1_hop = open(f'{args.o}{args.h}', 'w')
+    r2_hop = open(f'{args.o}{args.h}', 'w')
+
+if args.c != "":
+    r1_conflict = open(f'{args.o}{args.c}', 'w')
+    r2_conflict = open(f'{args.o}{args.c}', 'w')
+
 
 def grouper(iterable, n, fillvalue=None):
     "Collect data into fixed-length chunks or blocks"
@@ -100,17 +115,25 @@ for i in range(len(r1_files)):
     r1_files[i].close()
 for i in range(len(r2_files)):
     r2_files[i].close()
-r1_hop.close()
-r2_hop.close()
-r1_undeter.close()
-r2_undeter.close()
+
+if args.u != "" :
+    r1_undeter.close()
+    r2_undeter.close()
+
+if args.h != "" :
+    r1_hop.close()
+    r2_hop.close()
+
+if args.c != "" :
+    r1_conflict.close()
+    r2_conflict.close()
 
 hops = hops.reset_index().melt(id_vars = 'index', var_name='idx2', value_name= 'num_hops_observed')
 hops = hops[hops['num_hops_observed'] > 0]
 hops.columns = ['idx1', 'idx2', 'num_hops_observed']
-hops.to_csv(f'{args.o}barcode_hops.csv', index = False)
+hops.to_csv(f'{args.o}{args.p}barcode_hops.csv', index = False)
 
-#todo: logic to prevent duplication of effort: store 'known' barcodes in a dict as you read the file.
-#then, consult the list before processing the record.
+# todo: logic to prevent duplication of effort: store 'known' barcodes in a dict as you read the file.
+# then, consult the list before processing the record.
 
 
