@@ -187,4 +187,3 @@ hops = hops[hops['num_hops_observed'] > 0]
 hops.columns = ['idx1', 'idx2', 'num_hops_observed']
 hops.to_csv(f'{args.o}{args.p}barcode_hops.csv', index = False)
 
-pprint.pprint(barcode_dict)
