@@ -4,6 +4,7 @@ import pandas as pd
 import gzip
 from itertools import zip_longest
 import regex
+import pprint
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-b", help = "Barcode association table, csv format", required = True)
@@ -86,19 +87,19 @@ with gzip.open(args.fastqs[0], 'rt') as read1:
             idx2 = record_1[0].split(":")[-1].split("+")[1].rstrip('\n')
 
             if idx1+"+"+idx2 in barcode_dict: #we have seen this combination before...
-                if barcode_dict[idx1+"+"+idx2] == "undetermined" & args.u != "" : 
+                if (barcode_dict[idx1+"+"+idx2] == "undetermined") & (args.u != "") : 
                     for line in record_1:
                         r1_undeter.write(str(line))                
                     for line in record_2:
                         r2_undeter.write(str(line))
                 
-                elif barcode_dict[idx1+"+"+idx2] == "hop" & args.i != "" : 
+                elif (barcode_dict[idx1+"+"+idx2] == "hop") & (args.i != "") : 
                     for line in record_1:
                         r1_hop.write(str(line))
                     for line in record_2:
                         r2_hop.write(str(line))
 
-                elif barcode_dict[idx1+"+"+idx2] == "conflict" & args.c != "" : 
+                elif (barcode_dict[idx1+"+"+idx2] == "conflict") & (args.c != "") : 
                     for line in record_1:
                         r1_conflict.write(str(line))
                     for line in record_2:
@@ -136,7 +137,7 @@ with gzip.open(args.fastqs[0], 'rt') as read1:
 
                         demux_id = indexes.index[set(idx1_matches).intersection(idx2_matches).pop()]
                        
-                        barcode_dict[idx1+"+"+idx2] = demux_id
+                        barcode_dict[idx1+"+"+idx2] = indexes.index.get_loc(demux_id)
 
                         for line in record_1:
                             r1_files[indexes.index.get_loc(demux_id)].write(str(line))
@@ -186,7 +187,4 @@ hops = hops[hops['num_hops_observed'] > 0]
 hops.columns = ['idx1', 'idx2', 'num_hops_observed']
 hops.to_csv(f'{args.o}{args.p}barcode_hops.csv', index = False)
 
-# todo: logic to prevent duplication of effort: store 'known' barcodes in a dict as you read the file.
-# then, consult the list before processing the record.
-
-
+pprint.pprint(barcode_dict)
