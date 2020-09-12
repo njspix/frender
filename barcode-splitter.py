@@ -83,32 +83,36 @@ with gzip.open(args.fastqs[0], 'rt') as read1:
             idx2 = record_1[0].split(":")[-1].split("+")[1].rstrip('\n')
             idx1_matches = fuz_match_list(idx1, all_idx1)
             idx2_matches = fuz_match_list(idx2, all_idx2) 
-            if (bool(idx1_matches) & bool(idx2_matches)):
-                #print(idx1, idx2)
-                if len(set(idx1_matches).intersection(idx2_matches)) == 0: # index hop
-
-                    for line in record_1:
-                        r1_hop.write(str(line))
-                    for line in record_2:
-                        r2_hop.write(str(line))
-
+            if (bool(idx1_matches) & bool(idx2_matches)): # can find at least one match for both idx1 and idx2 somewhere
+                if len(set(idx1_matches).intersection(idx2_matches)) == 0: # this is an index hop
+                    if args.i != "" : 
+                        for line in record_1:
+                            r1_hop.write(str(line))
+                        for line in record_2:
+                            r2_hop.write(str(line))
                     try:
                         hops.loc[set([all_idx1[i] for i in idx1_matches]).pop(),set([all_idx2[i] for i in idx2_matches]).pop()] += 1 
                     except KeyError: #this combination of indices hasn't been initialized
                         hops.loc[set([all_idx1[i] for i in idx1_matches]).pop(),set([all_idx2[i] for i in idx2_matches]).pop()] = 1
+                
                 elif len(set(idx1_matches).intersection(idx2_matches)) == 1: # good read; idx1 and idx2 line up in one spot
                     demux_id = indexes.index[set(idx1_matches).intersection(idx2_matches).pop()]
                     for line in record_1:
                         r1_files[indexes.index.get_loc(demux_id)].write(str(line))
                     for line in record_2:
                         r2_files[indexes.index.get_loc(demux_id)].write(str(line))
-                else:
-                    raise NameError('more than one unique match for barcodes!')
-            else:
-                for line in record_1:
-                    r1_undeter.write(str(line))                
-                for line in record_2:
-                    r2_undeter.write(str(line))
+                else: # something is weird, we have more than one possible output file this read could belong to
+                    if args.c != "" : 
+                        for line in record_1:
+                            r1_conflict.write(str(line))
+                        for line in record_2:
+                            r2_conflict.write(str(line))
+            else: # can't match both barcodes
+                if args.u != "" : 
+                    for line in record_1:
+                        r1_undeter.write(str(line))                
+                    for line in record_2:
+                        r2_undeter.write(str(line))
 
 #close output files:
 for i in range(len(r1_files)):
