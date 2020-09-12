@@ -6,18 +6,18 @@ from itertools import zip_longest
 import regex
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-c", help = "Barcode association table, csv format", required = True)
+parser.add_argument("-b", help = "Barcode association table, csv format", required = True)
 parser.add_argument("-o", help = "output files directory", default = ".")
-parser.add_argument("-p", "--prefix", help = "prefix to be added to demuxed output files and index hop summary")
-parser.add_argument("-h", "--hopfile", help = "(optional) output fastq for index hopped reads", default = "")
-parser.add_argument("-u", "--undetermined", help = "(optional) output fastq for remaining undetermined reads", default = "")
-parser.add_argument("-c", "--conflict", help = "(optional) output fastq for reads with conflicting barcodes", default = "")
-parser.add_argument("fastqs", nargs= 2, required = True)
+parser.add_argument("-p", help = "prefix to be added to demuxed output files and index hop summary")
+parser.add_argument("-i", help = "(optional) output fastq for index hopped reads", default = "")
+parser.add_argument("-u", help = "(optional) output fastq for remaining undetermined reads", default = "")
+parser.add_argument("-c", help = "(optional) output fastq for reads with conflicting barcodes", default = "")
+parser.add_argument("fastqs", nargs= 2)
 
 args = parser.parse_args()
 
 #read barcode association file:
-indexes = pd.read_csv(args.c, header=0, names=['id', 'idx1', 'idx2']).set_index('id')
+indexes = pd.read_csv(args.b, header=0, names=['id', 'idx1', 'idx2']).set_index('id')
 all_idx1 = indexes['idx1'].tolist() 
 all_idx2 = indexes['idx2'].tolist()
 ids = list(indexes.index)
@@ -45,16 +45,16 @@ for i in range(len(ids)):
     r2_files.append(open(f'{args.o}{args.p}{ids[i]}_R2.fastq', 'w'))
 
 if args.u != "" :
-    r1_undeter = open(f'{args.o}{args.u}', 'w')
-    r2_undeter = open(f'{args.o}{args.u}', 'w')
+    r1_undeter = open(f'{args.o}{args.u}_R1.fastq', 'w')
+    r2_undeter = open(f'{args.o}{args.u}_R2.fastq', 'w')
 
-if args.h != "" :
-    r1_hop = open(f'{args.o}{args.h}', 'w')
-    r2_hop = open(f'{args.o}{args.h}', 'w')
+if args.i != "" :
+    r1_hop = open(f'{args.o}{args.i}_R1.fastq', 'w')
+    r2_hop = open(f'{args.o}{args.i}_R2.fastq', 'w')
 
 if args.c != "":
-    r1_conflict = open(f'{args.o}{args.c}', 'w')
-    r2_conflict = open(f'{args.o}{args.c}', 'w')
+    r1_conflict = open(f'{args.o}{args.c}_R1.fastq', 'w')
+    r2_conflict = open(f'{args.o}{args.c}_R2.fastq', 'w')
 
 
 def grouper(iterable, n, fillvalue=None):
@@ -120,7 +120,7 @@ if args.u != "" :
     r1_undeter.close()
     r2_undeter.close()
 
-if args.h != "" :
+if args.i != "" :
     r1_hop.close()
     r2_hop.close()
 
