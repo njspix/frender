@@ -72,100 +72,100 @@ def fuz_match_list(pattern, set_of_strings):
 
 hops = pd.DataFrame()
 
-with gzip.open(args.fastqs[0], 'rt') as read1:
-    with gzip.open(args.fastqs[1], 'rt') as read2:
-        reads_1 = grouper(read1, 4, '')
-        reads_2 = grouper(read2, 4, '')
+with gzip.open(args.fastqs[0], 'rt') as read1, gzip.open(args.fastqs[1], 'rt') as read2:
+    
+    reads_1 = grouper(read1, 4, '')
+    reads_2 = grouper(read2, 4, '')
 
-        barcode_dict = {}
+    barcode_dict = {}
 
-        for record_1,record_2 in zip(reads_1,reads_2):
-            assert len(record_1) == 4
-            #todo: check that read 1 and read 2 are identical (add switch for this?)
-            idx1 = record_1[0].split(":")[-1].split("+")[0].rstrip('\n')
-            idx2 = record_1[0].split(":")[-1].split("+")[1].rstrip('\n')
+    for record_1,record_2 in zip(reads_1,reads_2):
+        assert len(record_1) == 4
+        #todo: check that read 1 and read 2 are identical (add switch for this?)
+        idx1 = record_1[0].split(":")[-1].split("+")[0].rstrip('\n')
+        idx2 = record_1[0].split(":")[-1].split("+")[1].rstrip('\n')
 
-            if idx1+"+"+idx2 in barcode_dict: #we have seen this combination before...
-                if (barcode_dict[idx1+"+"+idx2] == "undetermined") & (args.u != "") : 
+        if idx1+"+"+idx2 in barcode_dict: #we have seen this combination before...
+            if (barcode_dict[idx1+"+"+idx2] == "undetermined") & (args.u != "") : 
+                for line in record_1:
+                    r1_undeter.write(str(line))                
+                for line in record_2:
+                    r2_undeter.write(str(line))
+            
+            elif (barcode_dict[idx1+"+"+idx2] == "hop") & (args.i != "") : 
+                for line in record_1:
+                    r1_hop.write(str(line))
+                for line in record_2:
+                    r2_hop.write(str(line))
+
+            elif (barcode_dict[idx1+"+"+idx2] == "conflict") & (args.c != "") : 
+                for line in record_1:
+                    r1_conflict.write(str(line))
+                for line in record_2:
+                    r2_conflict.write(str(line))
+            
+            elif barcode_dict[idx1+"+"+idx2] not in ["hop", "undetermined", "conflict"]:
+                for line in record_1:
+                    r1_files[barcode_dict[idx1+"+"+idx2]].write(str(line))
+                for line in record_2:
+                    r2_files[barcode_dict[idx1+"+"+idx2]].write(str(line))    
+            
+        else: #need to process this read
+            idx1_matches = fuz_match_list(idx1, all_idx1)
+            idx2_matches = fuz_match_list(idx2, all_idx2) 
+            
+            if (bool(idx1_matches) & bool(idx2_matches)): # can find at least one match for both idx1 and idx2 somewhere
+
+                match_intersection = set(idx1_matches).intersection(idx2_matches)
+
+                if len(match_intersection) == 0: # this is an index hop 
+                    
+                    barcode_dict[idx1+"+"+idx2] = "hop" # add to known barcodes
+                    
+                    # record in index hop report:
+                    try: 
+                        hops.loc[set([all_idx1[i] for i in idx1_matches]).pop(),set([all_idx2[i] for i in idx2_matches]).pop()] += 1 
+                        #this is a bit of a hack. Could fail if there is a 'perfectly bad' index read that matches > 1 index because it is 1 sub away from both of them. 
+                    except KeyError: #this combination of indices hasn't been initialized
+                        hops.loc[set([all_idx1[i] for i in idx1_matches]).pop(),set([all_idx2[i] for i in idx2_matches]).pop()] = 1  
+                    
+                    # optional write to output file
+                    if args.i != "" : 
+                        for line in record_1:
+                            r1_hop.write(str(line))
+                        for line in record_2:
+                            r2_hop.write(str(line))
+            
+                elif len(match_intersection) == 1: # good read; idx1 and idx2 line up in exactly one spot 
+
+                    demux_id = indexes.index[match_intersection.pop()]
+                    
+                    barcode_dict[idx1+"+"+idx2] = indexes.index.get_loc(demux_id)
+
+                    for line in record_1:
+                        r1_files[indexes.index.get_loc(demux_id)].write(str(line))
+                    for line in record_2:
+                        r2_files[indexes.index.get_loc(demux_id)].write(str(line))
+
+                else: # something is weird, we have more than one possible output file this read could belong to
+
+                    barcode_dict[idx1+"+"+idx2] = "conflict"
+
+                    if args.c != "" : 
+                        for line in record_1:
+                            r1_conflict.write(str(line))
+                        for line in record_2:
+                            r2_conflict.write(str(line))
+
+            else: # can't match both barcodes
+
+                barcode_dict[idx1+"+"+idx2] = "undetermined"
+
+                if args.u != "" : 
                     for line in record_1:
                         r1_undeter.write(str(line))                
                     for line in record_2:
                         r2_undeter.write(str(line))
-                
-                elif (barcode_dict[idx1+"+"+idx2] == "hop") & (args.i != "") : 
-                    for line in record_1:
-                        r1_hop.write(str(line))
-                    for line in record_2:
-                        r2_hop.write(str(line))
-
-                elif (barcode_dict[idx1+"+"+idx2] == "conflict") & (args.c != "") : 
-                    for line in record_1:
-                        r1_conflict.write(str(line))
-                    for line in record_2:
-                        r2_conflict.write(str(line))
-                
-                elif barcode_dict[idx1+"+"+idx2] not in ["hop", "undetermined", "conflict"]:
-                    for line in record_1:
-                        r1_files[barcode_dict[idx1+"+"+idx2]].write(str(line))
-                    for line in record_2:
-                        r2_files[barcode_dict[idx1+"+"+idx2]].write(str(line))    
-                
-            else:
-                idx1_matches = fuz_match_list(idx1, all_idx1)
-                idx2_matches = fuz_match_list(idx2, all_idx2) 
-                
-                if (bool(idx1_matches) & bool(idx2_matches)): # can find at least one match for both idx1 and idx2 somewhere
-
-                    match_intersection = set(idx1_matches).intersection(idx2_matches)
-
-                    if len(match_intersection) == 0: # this is an index hop 
-                        
-                        barcode_dict[idx1+"+"+idx2] = "hop" # add to known barcodes
-                        
-                        # record in index hop report:
-                        try: 
-                            hops.loc[set([all_idx1[i] for i in idx1_matches]).pop(),set([all_idx2[i] for i in idx2_matches]).pop()] += 1 
-                            #this is a bit of a hack. Could fail if there is a 'perfectly bad' index read that matches > 1 index because it is 1 sub away from both of them. 
-                        except KeyError: #this combination of indices hasn't been initialized
-                            hops.loc[set([all_idx1[i] for i in idx1_matches]).pop(),set([all_idx2[i] for i in idx2_matches]).pop()] = 1  
-                        
-                        # optional write to output file
-                        if args.i != "" : 
-                            for line in record_1:
-                                r1_hop.write(str(line))
-                            for line in record_2:
-                                r2_hop.write(str(line))
-                
-                    elif len(match_intersection) == 1: # good read; idx1 and idx2 line up in exactly one spot 
-
-                        demux_id = indexes.index[match_intersection.pop()]
-                       
-                        barcode_dict[idx1+"+"+idx2] = indexes.index.get_loc(demux_id)
-
-                        for line in record_1:
-                            r1_files[indexes.index.get_loc(demux_id)].write(str(line))
-                        for line in record_2:
-                            r2_files[indexes.index.get_loc(demux_id)].write(str(line))
-
-                    else: # something is weird, we have more than one possible output file this read could belong to
-
-                        barcode_dict[idx1+"+"+idx2] = "conflict"
-
-                        if args.c != "" : 
-                            for line in record_1:
-                                r1_conflict.write(str(line))
-                            for line in record_2:
-                                r2_conflict.write(str(line))
-
-                else: # can't match both barcodes
-
-                    barcode_dict[idx1+"+"+idx2] = "undetermined"
-
-                    if args.u != "" : 
-                        for line in record_1:
-                            r1_undeter.write(str(line))                
-                        for line in record_2:
-                            r2_undeter.write(str(line))
 
 #close output files:
 for i in range(len(r1_files)):
@@ -185,6 +185,7 @@ if args.c != "" :
     r1_conflict.close()
     r2_conflict.close()
 
+#publish hops report
 hops = hops.reset_index().melt(id_vars = 'index', var_name='idx2', value_name= 'num_hops_observed')
 hops = hops[hops['num_hops_observed'] > 0]
 hops.columns = ['idx1', 'idx2', 'num_hops_observed']
