@@ -4,7 +4,6 @@ import pandas as pd
 import gzip
 from itertools import zip_longest
 import regex
-import pprint
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-b", help = "Barcode association table, csv format", required = True)
@@ -116,13 +115,17 @@ with gzip.open(args.fastqs[0], 'rt') as read1:
                 idx2_matches = fuz_match_list(idx2, all_idx2) 
                 
                 if (bool(idx1_matches) & bool(idx2_matches)): # can find at least one match for both idx1 and idx2 somewhere
-                    if len(set(idx1_matches).intersection(idx2_matches)) == 0: # this is an index hop    
+
+                    match_intersection = set(idx1_matches).intersection(idx2_matches)
+
+                    if len(match_intersection) == 0: # this is an index hop 
                         
                         barcode_dict[idx1+"+"+idx2] = "hop" # add to known barcodes
                         
                         # record in index hop report:
                         try: 
                             hops.loc[set([all_idx1[i] for i in idx1_matches]).pop(),set([all_idx2[i] for i in idx2_matches]).pop()] += 1 
+                            #this is a bit of a hack. Could fail if there is a 'perfectly bad' index read that matches > 1 index because it is 1 sub away from both of them. 
                         except KeyError: #this combination of indices hasn't been initialized
                             hops.loc[set([all_idx1[i] for i in idx1_matches]).pop(),set([all_idx2[i] for i in idx2_matches]).pop()] = 1  
                         
@@ -133,9 +136,9 @@ with gzip.open(args.fastqs[0], 'rt') as read1:
                             for line in record_2:
                                 r2_hop.write(str(line))
                 
-                    elif len(set(idx1_matches).intersection(idx2_matches)) == 1: # good read; idx1 and idx2 line up in one spot
+                    elif len(match_intersection) == 1: # good read; idx1 and idx2 line up in exactly one spot 
 
-                        demux_id = indexes.index[set(idx1_matches).intersection(idx2_matches).pop()]
+                        demux_id = indexes.index[match_intersection.pop()]
                        
                         barcode_dict[idx1+"+"+idx2] = indexes.index.get_loc(demux_id)
 
