@@ -17,7 +17,7 @@ parser.add_argument("fastqs", nargs= 2)
 args = parser.parse_args()
 
 #read barcode association file:
-indexes = pd.read_csv(args.b, header=0, names=['id', 'idx1', 'idx2']).set_index('id')
+indexes = pd.read_csv(args.b, names=['id', 'idx1', 'idx2']).set_index('id')
 all_idx1 = indexes['idx1'].tolist() 
 all_idx2 = indexes['idx2'].tolist()
 ids = list(indexes.index)
@@ -78,8 +78,12 @@ with gzip.open(args.fastqs[0], 'rt') as read1, gzip.open(args.fastqs[1], 'rt') a
     reads_2 = grouper(read2, 4, '')
 
     barcode_dict = {}
+    n=0
 
     for record_1,record_2 in zip(reads_1,reads_2):
+        n+=1
+        if i % 10000 == 0:
+            print(f"processed {n} records")
         assert len(record_1) == 4
         #todo: check that read 1 and read 2 are identical (add switch for this?)
         idx1 = record_1[0].split(":")[-1].split("+")[0].rstrip('\n')
