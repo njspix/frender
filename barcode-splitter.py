@@ -41,20 +41,20 @@ r2_files = []
 
 #open output files:
 for i in range(len(ids)):
-    r1_files.append(open(f'{args.o}{args.p}{ids[i]}_R1.fastq', 'w'))
-    r2_files.append(open(f'{args.o}{args.p}{ids[i]}_R2.fastq', 'w'))
+    r1_files.append(gzip.open(f'{args.o}{args.p}{ids[i]}_R1.fq.gz', 'wb'))
+    r2_files.append(gzip.open(f'{args.o}{args.p}{ids[i]}_R2.fq.gz', 'wb'))
 
 if args.u != "" :
-    r1_undeter = open(f'{args.o}{args.u}_R1.fastq', 'w')
-    r2_undeter = open(f'{args.o}{args.u}_R2.fastq', 'w')
+    r1_undeter = gzip.open(f'{args.o}{args.u}_R1.fq.gz', 'wb')
+    r2_undeter = gzip.open(f'{args.o}{args.u}_R2.fq.gz', 'wb')
 
 if args.i != "" :
-    r1_hop = open(f'{args.o}{args.i}_R1.fastq', 'w')
-    r2_hop = open(f'{args.o}{args.i}_R2.fastq', 'w')
+    r1_hop = gzip.open(f'{args.o}{args.i}_R1.fq.gz', 'wb')
+    r2_hop = gzip.open(f'{args.o}{args.i}_R2.fq.gz', 'wb')
 
 if args.c != "":
-    r1_conflict = open(f'{args.o}{args.c}_R1.fastq', 'w')
-    r2_conflict = open(f'{args.o}{args.c}_R2.fastq', 'w')
+    r1_conflict = gzip.open(f'{args.o}{args.c}_R1.fq.gz', 'wb')
+    r2_conflict = gzip.open(f'{args.o}{args.c}_R2.fq.gz', 'wb')
 
 
 def grouper(iterable, n, fillvalue=None):
@@ -88,27 +88,27 @@ with gzip.open(args.fastqs[0], 'rt') as read1, gzip.open(args.fastqs[1], 'rt') a
         if idx1+"+"+idx2 in barcode_dict: #we have seen this combination before...
             if (barcode_dict[idx1+"+"+idx2] == "undetermined") & (args.u != "") : 
                 for line in record_1:
-                    r1_undeter.write(str(line))                
+                    r1_undeter.write(str(line).encode('utf-8'))                
                 for line in record_2:
-                    r2_undeter.write(str(line))
+                    r2_undeter.write(str(line).encode('utf-8'))
             
             elif (barcode_dict[idx1+"+"+idx2] == "hop") & (args.i != "") : 
                 for line in record_1:
-                    r1_hop.write(str(line))
+                    r1_hop.write(str(line).encode('utf-8'))
                 for line in record_2:
-                    r2_hop.write(str(line))
+                    r2_hop.write(str(line).encode('utf-8'))
 
             elif (barcode_dict[idx1+"+"+idx2] == "conflict") & (args.c != "") : 
                 for line in record_1:
-                    r1_conflict.write(str(line))
+                    r1_conflict.write(str(line).encode('utf-8'))
                 for line in record_2:
-                    r2_conflict.write(str(line))
+                    r2_conflict.write(str(line).encode('utf-8'))
             
             elif barcode_dict[idx1+"+"+idx2] not in ["hop", "undetermined", "conflict"]:
                 for line in record_1:
-                    r1_files[barcode_dict[idx1+"+"+idx2]].write(str(line))
+                    r1_files[barcode_dict[idx1+"+"+idx2]].write(str(line).encode('utf-8'))
                 for line in record_2:
-                    r2_files[barcode_dict[idx1+"+"+idx2]].write(str(line))    
+                    r2_files[barcode_dict[idx1+"+"+idx2]].write(str(line).encode('utf-8'))    
             
         else: #need to process this read
             idx1_matches = fuz_match_list(idx1, all_idx1)
@@ -132,9 +132,9 @@ with gzip.open(args.fastqs[0], 'rt') as read1, gzip.open(args.fastqs[1], 'rt') a
                     # optional write to output file
                     if args.i != "" : 
                         for line in record_1:
-                            r1_hop.write(str(line))
+                            r1_hop.write(str(line).encode('utf-8'))
                         for line in record_2:
-                            r2_hop.write(str(line))
+                            r2_hop.write(str(line).encode('utf-8'))
             
                 elif len(match_intersection) == 1: # good read; idx1 and idx2 line up in exactly one spot 
 
@@ -143,9 +143,9 @@ with gzip.open(args.fastqs[0], 'rt') as read1, gzip.open(args.fastqs[1], 'rt') a
                     barcode_dict[idx1+"+"+idx2] = indexes.index.get_loc(demux_id)
 
                     for line in record_1:
-                        r1_files[indexes.index.get_loc(demux_id)].write(str(line))
+                        r1_files[indexes.index.get_loc(demux_id)].write(str(line).encode('utf-8'))
                     for line in record_2:
-                        r2_files[indexes.index.get_loc(demux_id)].write(str(line))
+                        r2_files[indexes.index.get_loc(demux_id)].write(bytes(str(line).encode('utf-8')))
 
                 else: # something is weird, we have more than one possible output file this read could belong to
 
@@ -153,9 +153,9 @@ with gzip.open(args.fastqs[0], 'rt') as read1, gzip.open(args.fastqs[1], 'rt') a
 
                     if args.c != "" : 
                         for line in record_1:
-                            r1_conflict.write(str(line))
+                            r1_conflict.write(str(line).encode('utf-8'))
                         for line in record_2:
-                            r2_conflict.write(str(line))
+                            r2_conflict.write(str(line).encode('utf-8'))
 
             else: # can't match both barcodes
 
@@ -163,9 +163,9 @@ with gzip.open(args.fastqs[0], 'rt') as read1, gzip.open(args.fastqs[1], 'rt') a
 
                 if args.u != "" : 
                     for line in record_1:
-                        r1_undeter.write(str(line))                
+                        r1_undeter.write(str(line).encode('utf-8'))                
                     for line in record_2:
-                        r2_undeter.write(str(line))
+                        r2_undeter.write(str(line).encode('utf-8'))
 
 #close output files:
 for i in range(len(r1_files)):
