@@ -10,7 +10,8 @@ Date Created:
     September 2020
 
 Requires:
-    TODO: LIST NON-BASE PYTHON MODULES USED AND VERSIONS TESTED
+    pandas 1.2.2
+    regex 2020.11.13
 
 Inputs:
     TODO: ADD DESCRIPTIONS OF INPUTS
@@ -96,7 +97,7 @@ def frender(barcode, fastq_1, fastq_2,
     # is related to a collaborative project with human fetal DNA.
     if (len(test.columns) == 3):
         print('WARNING: This barcode file only has 3 columns.', end=' ')
-        print('It is for a different experiment.')
+        print('It likely is a single-indexed library')
         sys.exit(0)
 
     #TODO: Handle single index
@@ -152,6 +153,8 @@ def frender(barcode, fastq_1, fastq_2,
         record_count = 0
         for record_1, record_2 in zip(reads_1, reads_2):
             assert (len(record_1) == 4) and (len(record_2) == 4)
+            if (record_count%10000 == 0):
+                print(f"Processed {record_count} reads")
             record_count += 1
 
             # Parse record header line to compare name and extract barcode
@@ -160,7 +163,7 @@ def frender(barcode, fastq_1, fastq_2,
 
             if (r1_head[0] != r2_head[0]):
                 print('WARNING: Skipping mismatched reads', end=' ')
-                print(f'{r1_name} != {r2_name} at line', end=' ')
+                print(f'{r1_head[0]} != {r2_head[0]} at line', end=' ')
                 print(f'{4*record_count} of {fastq_1} and {fastq_2}')
                 continue
             
@@ -170,21 +173,39 @@ def frender(barcode, fastq_1, fastq_2,
             idx2 = code.split('+')[1]        # index 2 in full name
 
             if code in barcode_dict: # seen this combination before
-                if (barcode_dict[code] == 'hop') and (ihopped != ''):
-                    for line in record_1:
-                        r1_hop.write(str(line))
-                    for line in record_2:
-                        r2_hop.write(str(line))
+
+                # could be an index hop:
+                if (barcode_dict[code] == 'hop'):
+
+                    # write to files if requested
+                    if (ihopped != ''):
+                        for line in record_1:
+                            r1_hop.write(str(line))
+                        for line in record_2:
+                            r2_hop.write(str(line))
+
+                    # update hop count table
+                    idx1_matches = fuz_match_list(idx1, all_idx1)
+                    idx2_matches = fuz_match_list(idx2, all_idx2)
+                    i_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
+                    i_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
+                    hops.loc[i_idx1, i_idx2] += 1 
+
+                # could be a conflict:
                 elif (barcode_dict[code] == 'conflict') and (cnflict != ''):
                     for line in record_1:
                         r1_con.write(str(line))
                     for line in record_2:
                         r2_con.write(str(line))
+
+                # could be unkonwn:
                 elif (barcode_dict[code] == 'undetermined') and (undeter != ''):
                     for line in record_1:
                         r1_und.write(str(line))
                     for line in record_2:
                         r2_und.write(str(line))
+                
+                # or it could be a valid demux:
                 elif barcode_dict[code] not in ['hop', 'conflict', 'undetermined']:
                     for line in record_1:
                         r1_files[barcode_dict[code]].write(str(line))
@@ -203,10 +224,10 @@ def frender(barcode, fastq_1, fastq_2,
                         # No matches, so index hop
                         barcode_dict[code] = 'hop' # add to known barcodes
 
-                        # This is a bit of a hack. Could fail if there is a
-                        # 'perfectly bad' index read that matches > 1 index
-                        # because it is 1 sub away from both of them. 
-                        # J.M. NOT SURE WHAT THIS MEANS??
+                        # This is currently imprecise. A 'hop' could match more than one barcode in either index, 
+                        # idx1_matches = [4] and idx2_matches = [2, 3]. In this case, the matched indices could 
+                        # be identical, or they could both be 1 substitution away from the target (bad index design, but that's not my problem here :-)
+                        # This doesn't account for that second case.
                         i_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
                         i_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
                         try:
