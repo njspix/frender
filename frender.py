@@ -153,7 +153,7 @@ def frender(barcode, fastq_1, fastq_2,
         record_count = 0
         for record_1, record_2 in zip(reads_1, reads_2):
             assert (len(record_1) == 4) and (len(record_2) == 4)
-            if (record_count%10000 == 0):
+            if (record_count%10000 == 1):
                 print(f"Processed {record_count} reads")
             record_count += 1
 
@@ -365,19 +365,19 @@ def frender_se(barcode, fastq,
 
     # Start processing data
     with gzip.open(fastq, 'rt') as read1:
-        reads_1 = grouper(read1, 4, '')
+        reads = grouper(read1, 4, '')
 
         barcode_dict = {}
 
         record_count = 0
-        for record_1 in zip(reads_1):
-            assert (len(record_1) == 4)
-            if (record_count%10000 == 0):
+        for record in reads:
+            assert (len(record) == 4)
+            if (record_count%10000 == 1):
                 print(f"Processed {record_count} reads")
             record_count += 1
 
             # Parse record header line to compare name and extract barcode
-            r1_head = record_1[0].rstrip('\n').split(' ')
+            r1_head = record[0].rstrip('\n').split(' ')
             
             # Barcode indices
             code = r1_head[1].split(':')[-1] # full index name
@@ -391,7 +391,7 @@ def frender_se(barcode, fastq,
 
                     # write to files if requested
                     if (ihopped != ''):
-                        for line in record_1:
+                        for line in record:
                             r1_hop.write(str(line))
 
                     # update hop count table
@@ -403,17 +403,17 @@ def frender_se(barcode, fastq,
 
                 # could be a conflict:
                 elif (barcode_dict[code] == 'conflict') and (cnflict != ''):
-                    for line in record_1:
+                    for line in record:
                         r1_con.write(str(line))
 
                 # could be unkonwn:
                 elif (barcode_dict[code] == 'undetermined') and (undeter != ''):
-                    for line in record_1:
+                    for line in record:
                         r1_und.write(str(line))
                 
                 # or it could be a valid demux:
                 elif barcode_dict[code] not in ['hop', 'conflict', 'undetermined']:
-                    for line in record_1:
+                    for line in record:
                         r1_files[barcode_dict[code]].write(str(line))
 
             else: # need to process this read
@@ -442,26 +442,26 @@ def frender_se(barcode, fastq,
 
                         # Write to output file (if applicable)
                         if (ihopped != ''):
-                            for line in record_1:
+                            for line in record:
                                 r1_hop.write(str(line))
                     elif (len(match_isec) == 1):
                         # good read; idx1 and idx2 line up in exactly one spot
                         demux_id = indexes.index[match_isec.pop()]
 
                         barcode_dict[code] = indexes.index.get_loc(demux_id)
-                        for line in record_1:
+                        for line in record:
                             r1_files[barcode_dict[code]].write(str(line))
                     else:
                         # Read matches to more than one possible output file
                         barcode_dict[code] = 'conflict'
                         if (cnflict != ''):
-                            for line in record_1:
+                            for line in record:
                                 r1_con.write(str(line))
                 else:
                     # Can't find a match for at least one barcode
                     barcode_dict[code] = 'undetermined'
                     if (undeter != ''):
-                        for line in record_1:
+                        for line in record:
                             r1_und.write(str(line))
 
     # Close output files
@@ -517,17 +517,38 @@ if __name__ == '__main__':
         required=True
     )
     # TODO: reformat this...
-    parser.add_argument('fastqs', nargs= 2) 
+    parser.add_argument('fastqs', nargs=argparse.REMAINDER) 
 
     args = parser.parse_args()
 
-    frender(
-        args.b,
-        args.fastqs[0],
-        args.fastqs[1],
-        args.o,
-        args.p,
-        args.i,
-        args.c,
-        args.u
-    )
+    #single end case
+    if ( len(args.fastqs) == 1 ):
+        print("Only one input fastq detected. Running in single-end mode...")
+        frender_se(
+            args.b,
+            args.fastqs[0],
+            args.o,
+            args.p,
+            args.i,
+            args.c,
+            args.u
+        )
+
+    #paired-end case
+    elif ( len(args.fastqs) == 2 ):
+        print("Two input fastqs detected. Running in paired-end mode...")
+        frender(
+            args.b,
+            args.fastqs[0],
+            args.fastqs[1],
+            args.o,
+            args.p,
+            args.i,
+            args.c,
+            args.u
+        )
+    else: raise TypeError("Wrong number of fastq files provided. Please specify only one or two fastq files to use as input!")
+
+#TODO: add 'scan' mode. Rip through read1 Undetermined_* file (doesn't matter if single or paired-end...)
+# Classify and count all the barcodes present, then dump into csv or some other report. 
+# Have an option to proceed with standard frender() if any un-demultiplexed reads are found.
