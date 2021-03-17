@@ -483,6 +483,223 @@ def frender_se(barcode, fastq,
     hops.columns = ['idx1', 'idx2', 'num_hops_observed']
     hops.to_csv(f'{out_dir}{preefix}barcode_hops.csv', index=False)
 
+def frender_scan(barcode, fastq_1,
+            out_dir='.', preefix=''):
+    """Scan a single fastq file, counting exact and inexact barcode matches, conflicting barcodes, index hops, and undetermined reads. No demultiplexing is performed.
+
+    Inputs -
+        barcode - CSV file containing barcodes
+        fastq_1 - Read 1 FASTQ file
+        out_dir - Output directory name [default: '.']
+        preefix - Prefix to add to output files [default: '']
+
+    Returns -
+        TODO: doc...
+    """
+    # Not all data includes a header in barcodeAssociationTable.txt
+    # Check for how to correctly load data
+    cols=['AccessionID', 'ClientAccessionID', 'Index1', 'Index2']
+    test = pd.read_csv(barcode, nrows=1, header=None)
+
+    # As of 15 Sep 2020, early scWGBS data has four columns and newer data
+    # has seven columns. There is one dataset with three columns, and this
+    # is related to a collaborative project with human fetal DNA.
+    if (len(test.columns) == 3):
+        print('WARNING: This barcode file only has 3 columns.', end=' ')
+        print('It likely is a single-indexed library')
+        sys.exit(0)
+
+    #TODO: Handle single index
+    #TODO: Check barcodes are all the same length, match [ATCGatcg]
+    if (test[0][0].startswith('Acc') or test[0][0].startswith('Client')):
+        indexes = pd.read_csv(barcode, usecols=cols, index_col='AccessionID')
+    else:
+        indexes = pd.read_csv(barcode, header=None, names=cols,
+                              index_col='AccessionID')
+
+    all_idx1 = indexes['Index1'].tolist()
+    all_idx2 = indexes['Index2'].tolist()
+    ids = list(indexes.index)
+
+    # Create output directory and prep prefix
+    out_dir = out_dir.rstrip('/') + '/' # Add trailing slash
+    if out_dir != './':
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+
+    if (preefix != '' and not preefix.endswith('_')):
+        preefix = preefix + '_'
+
+    # Open output files
+    r1_files = []
+    r2_files = []
+
+    for id in ids:
+        r1_files.append(open(f'{out_dir}{preefix}{id}_R1.fastq', 'w'))
+        r2_files.append(open(f'{out_dir}{preefix}{id}_R2.fastq', 'w'))
+        #r1_files.append(f'{out_dir}{preefix}{id}_R1.fastq')
+        #r2_files.append(f'{out_dir}{preefix}{id}_R2.fastq')
+
+    if (ihopped != ''):
+        r1_hop = open(f'{out_dir}{preefix}{ihopped}_R1.fastq', 'w')
+        r2_hop = open(f'{out_dir}{preefix}{ihopped}_R2.fastq', 'w')
+    if (cnflict != ''):
+        r1_con = open(f'{out_dir}{preefix}{cnflict}_R1.fastq', 'w')
+        r2_con = open(f'{out_dir}{preefix}{cnflict}_R2.fastq', 'w')
+    if (undeter != ''):
+        r1_und = open(f'{out_dir}{preefix}{undeter}_R1.fastq', 'w')
+        r2_und = open(f'{out_dir}{preefix}{undeter}_R2.fastq', 'w')
+
+    # DataFrame to store index hopping information
+    hops = pd.DataFrame()
+
+    # Start processing data
+    with gzip.open(fastq_1, 'rt') as read1, gzip.open(fastq_2, 'rt') as read2:
+        reads_1 = grouper(read1, 4, '')
+        reads_2 = grouper(read2, 4, '')
+
+        barcode_dict = {}
+
+        record_count = 0
+        for record_1, record_2 in zip(reads_1, reads_2):
+            assert (len(record_1) == 4) and (len(record_2) == 4)
+            if (record_count%10000 == 1):
+                print(f"Processed {record_count} reads")
+            record_count += 1
+
+            # Parse record header line to compare name and extract barcode
+            r1_head = record_1[0].rstrip('\n').split(' ')
+            r2_head = record_2[0].rstrip('\n').split(' ')
+
+            if (r1_head[0] != r2_head[0]):
+                print('WARNING: Skipping mismatched reads', end=' ')
+                print(f'{r1_head[0]} != {r2_head[0]} at line', end=' ')
+                print(f'{4*record_count} of {fastq_1} and {fastq_2}')
+                continue
+            
+            # Barcode indices
+            code = r1_head[1].split(':')[-1] # full index name
+            idx1 = code.split('+')[0]        # index 1 in full name
+            idx2 = code.split('+')[1]        # index 2 in full name
+
+            if code in barcode_dict: # seen this combination before
+
+                # could be an index hop:
+                if (barcode_dict[code] == 'hop'):
+
+                    # write to files if requested
+                    if (ihopped != ''):
+                        for line in record_1:
+                            r1_hop.write(str(line))
+                        for line in record_2:
+                            r2_hop.write(str(line))
+
+                    # update hop count table
+                    idx1_matches = fuz_match_list(idx1, all_idx1)
+                    idx2_matches = fuz_match_list(idx2, all_idx2)
+                    i_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
+                    i_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
+                    hops.loc[i_idx1, i_idx2] += 1 
+
+                # could be a conflict:
+                elif (barcode_dict[code] == 'conflict') and (cnflict != ''):
+                    for line in record_1:
+                        r1_con.write(str(line))
+                    for line in record_2:
+                        r2_con.write(str(line))
+
+                # could be unkonwn:
+                elif (barcode_dict[code] == 'undetermined') and (undeter != ''):
+                    for line in record_1:
+                        r1_und.write(str(line))
+                    for line in record_2:
+                        r2_und.write(str(line))
+                
+                # or it could be a valid demux:
+                elif barcode_dict[code] not in ['hop', 'conflict', 'undetermined']:
+                    for line in record_1:
+                        r1_files[barcode_dict[code]].write(str(line))
+                    for line in record_2:
+                        r2_files[barcode_dict[code]].write(str(line))
+
+            else: # need to process this read
+                idx1_matches = fuz_match_list(idx1, all_idx1)
+                idx2_matches = fuz_match_list(idx2, all_idx2)
+
+                if (bool(idx1_matches) and bool(idx2_matches)):
+                    # Can find at least one barcode match for both indices
+                    match_isec = set(idx1_matches).intersection(idx2_matches)
+
+                    if (len(match_isec) == 0):
+                        # No matches, so index hop
+                        barcode_dict[code] = 'hop' # add to known barcodes
+
+                        # This is currently imprecise. A 'hop' could match more than one barcode in either index, 
+                        # idx1_matches = [4] and idx2_matches = [2, 3]. In this case, the matched indices could 
+                        # be identical, or they could both be 1 substitution away from the target (bad index design, but that's not my problem here :-)
+                        # This doesn't account for that second case.
+                        i_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
+                        i_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
+                        try:
+                            hops.loc[i_idx1, i_idx2] += 1 
+                        except KeyError:
+                            # Combination of indices hasn't been initialized
+                            hops.loc[i_idx1, i_idx2] = 1  
+
+                        # Write to output file (if applicable)
+                        if (ihopped != ''):
+                            for line in record_1:
+                                r1_hop.write(str(line))
+                            for line in record_2:
+                                r2_hop.write(str(line))
+                    elif (len(match_isec) == 1):
+                        # good read; idx1 and idx2 line up in exactly one spot
+                        demux_id = indexes.index[match_isec.pop()]
+
+                        barcode_dict[code] = indexes.index.get_loc(demux_id)
+                        for line in record_1:
+                            r1_files[barcode_dict[code]].write(str(line))
+                        for line in record_2:
+                            r2_files[barcode_dict[code]].write(str(line))
+                    else:
+                        # Read matches to more than one possible output file
+                        barcode_dict[code] = 'conflict'
+                        if (cnflict != ''):
+                            for line in record_1:
+                                r1_con.write(str(line))
+                            for line in record_2:
+                                r2_con.write(str(line))
+                else:
+                    # Can't find a match for at least one barcode
+                    barcode_dict[code] = 'undetermined'
+                    if (undeter != ''):
+                        for line in record_1:
+                            r1_und.write(str(line))
+                        for line in record_2:
+                            r2_und.write(str(line))
+
+    # Close output files
+    for i in range(len(r1_files)):
+        r1_files[i].close()
+        r2_files[i].close()
+
+    if (ihopped != ''):
+        r1_hop.close()
+        r2_hop.close()
+    if (cnflict != ''):
+        r1_con.close()
+        r2_con.close()
+    if (undeter != ''):
+        r1_und.close()
+        r2_und.close()
+
+    # Write index hopping report
+    hops = hops.reset_index().melt(id_vars='index',
+                                   var_name='idx2',
+                                   value_name= 'num_hops_observed')
+    hops = hops[hops['num_hops_observed'] > 0]
+    hops.columns = ['idx1', 'idx2', 'num_hops_observed']
+    hops.to_csv(f'{out_dir}{preefix}barcode_hops.csv', index=False)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Demultiplex Undetermined FastQ files with given barcodes.'
@@ -516,38 +733,53 @@ if __name__ == '__main__':
         help='Barcode association table, csv format',
         required=True
     )
-    # TODO: reformat this...
+    parser.add_argument(
+        '-s', '--scan', 
+        action = 'store_true',
+        help='Scan a single fastq file, counting exact and inexact barcode matches, conflicting barcodes, index hops, and undetermined reads. No demultiplexing is performed.',
+    )
+
     parser.add_argument('fastqs', nargs=argparse.REMAINDER) 
 
     args = parser.parse_args()
+    
+    if scan:
+        print(f"Scanning {fastqs[0]}...")
+        frender_scan(
+                args.b,
+                args.fastqs[0],
+                args.o,
+                args.p
+            )
 
-    #single end case
-    if ( len(args.fastqs) == 1 ):
-        print("Only one input fastq detected. Running in single-end mode...")
-        frender_se(
-            args.b,
-            args.fastqs[0],
-            args.o,
-            args.p,
-            args.i,
-            args.c,
-            args.u
-        )
+    else:
+        #single end case
+        if ( len(args.fastqs) == 1 ):
+            print("Only one input fastq detected. Running in single-end mode...")
+            frender_se(
+                args.b,
+                args.fastqs[0],
+                args.o,
+                args.p,
+                args.i,
+                args.c,
+                args.u
+            )
 
-    #paired-end case
-    elif ( len(args.fastqs) == 2 ):
-        print("Two input fastqs detected. Running in paired-end mode...")
-        frender(
-            args.b,
-            args.fastqs[0],
-            args.fastqs[1],
-            args.o,
-            args.p,
-            args.i,
-            args.c,
-            args.u
-        )
-    else: raise TypeError("Wrong number of fastq files provided. Please specify only one or two fastq files to use as input!")
+        #paired-end case
+        elif ( len(args.fastqs) == 2 ):
+            print("Two input fastqs detected. Running in paired-end mode...")
+            frender(
+                args.b,
+                args.fastqs[0],
+                args.fastqs[1],
+                args.o,
+                args.p,
+                args.i,
+                args.c,
+                args.u
+            )
+        else: raise TypeError("Wrong number of fastq files provided. Please specify only one or two fastq files to use as input!")
 
 #TODO: add 'scan' mode. Rip through read1 Undetermined_* file (doesn't matter if single or paired-end...)
 # Classify and count all the barcodes present, then dump into csv or some other report. 
