@@ -530,7 +530,7 @@ def frender_scan(barcode, fastq_1,
         preefix = preefix + '_'
 
     # DataFrame to store index hopping information
-    hops = pd.DataFrame()
+    read_counts = pd.DataFrame(columns = ['read_idx1', 'read_idx2', 'matched_idx1', 'matched_idx2', 'class', 'sample_name', 'total_reads'])
 
     # Start processing data
     with gzip.open(fastq_1, 'rt') as read1:
@@ -563,7 +563,7 @@ def frender_scan(barcode, fastq_1,
                     idx2_matches = fuz_match_list(idx2, all_idx2)
                     i_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
                     i_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
-                    hops.loc[i_idx1, i_idx2] += 1 
+                    read_counts.loc[i_idx1, i_idx2] += 1 
 
                 # could be a conflict:
                 elif (barcode_dict[code] == 'conflict'):
@@ -596,10 +596,10 @@ def frender_scan(barcode, fastq_1,
                         i_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
                         i_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
                         try:
-                            hops.loc[i_idx1, i_idx2] += 1 
+                            read_counts.loc[i_idx1, i_idx2] += 1 
                         except KeyError:
                             # Combination of indices hasn't been initialized
-                            hops.loc[i_idx1, i_idx2] = 1  
+                            read_counts.loc[i_idx1, i_idx2] = 1  
 
                     elif (len(match_isec) == 1):
                         # good read; idx1 and idx2 line up in exactly one spot
@@ -607,23 +607,45 @@ def frender_scan(barcode, fastq_1,
 
                         barcode_dict[code] = indexes.index.get_loc(demux_id)
 
+                        read_counts = read_counts.append({'read_idx1':idx1, 
+                                                          'read_idx2':idx2, 
+                                                          'matched_idx1':i_idx1, 
+                                                          'matched_idx2':i_idx2, 
+                                                          'class': 'demuxable', 
+                                                          'sample_name':demux_id, 
+                                                          'total_reads':1}, 
+                                                        ignore_index = True)
+
                     else:
                         # Read matches to more than one possible output file
                         barcode_dict[code] = 'conflict'
 
+                        read_counts = read_counts.append({'read_idx1':idx1, 
+                                                          'read_idx2':idx2, 
+                                                          'matched_idx1':i_idx1, 
+                                                          'matched_idx2':i_idx2, 
+                                                          'class': 'ambiguous', 
+                                                          'sample_name':NA, 
+                                                          'total_reads':1}, 
+                                                        ignore_index = True)
                 else:
                     # Can't find a match for at least one barcode
                     barcode_dict[code] = 'undetermined'
 
-    # Write index hopping report
-    hops = hops.reset_index().melt(id_vars='index',
-                                   var_name='idx2',
-                                   value_name= 'num_hops_observed')
-    hops = hops[hops['num_hops_observed'] > 0]
-    hops.columns = ['idx1', 'idx2', 'num_hops_observed']
-    hops.to_csv(f'{out_dir}{preefix}barcode_hops.csv', index=False)
+                    read_counts = read_counts.append({'read_idx1':idx1, 
+                                                      'read_idx2':idx2, 
+                                                      'matched_idx1':i_idx1, 
+                                                      'matched_idx2':i_idx2, 
+                                                      'class': 'undetermined', 
+                                                      'sample_name':NA, 
+                                                      'total_reads':1}, 
+                                                    ignore_index = True)
+    # Write report
+    print(read_counts.tocsv())
 
-    #TODO: write out other information in....
+    #TODO: write out all information in csv format, e.g.:
+    # idx_1,idx_2,class,sample_name,total_reads
+    # ACTGA,CGATG,{index_hop,ambiguous,undetermined,demuxable},{sample_name,NA},131245125
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
