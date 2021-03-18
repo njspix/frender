@@ -23,7 +23,7 @@ import argparse
 from pathlib import Path
 import pandas as pd
 import gzip
-from itertools import zip_longest
+from itertools import zip_longest, islice
 import sys
 
 try:
@@ -505,8 +505,8 @@ def frender_scan(barcode, fastq_1,
     # has seven columns. There is one dataset with three columns, and this
     # is related to a collaborative project with human fetal DNA.
     if (len(test.columns) == 3):
-        print('WARNING: This barcode file only has 3 columns.', end=' ', file=sys.stderr)
-        print('It likely is a single-indexed library', file=sys.stderr)
+        print('WARNING: This barcode file only has 3 columns.', end=' ')
+        print('It likely is a single-indexed library')
         sys.exit(0)
 
     #TODO: Handle single index
@@ -532,10 +532,10 @@ def frender_scan(barcode, fastq_1,
     test = pd.DataFrame()
     record_count = 0
 
-    with gzip.open('test.fastq.gz', 'rt') as read_file:
+    with gzip.open(fastq_1, 'rt') as read_file:
         for read_head in islice(read_file, 0, None, 4):
             if record_count%10000==1:
-                print(f"processed {record_count}")
+                print(f"Processed {record_count} reads...", file = sys.stderr)
             
             code = read_head.rstrip('\n').split(' ')[1].split(':')[-1]
             idx1 = code.split('+')[0]
@@ -547,11 +547,17 @@ def frender_scan(barcode, fastq_1,
                 test.loc[idx1, idx2] = 1
             record_count += 1
 
+    print("Scanning complete! Analyzing barcodes...", file = sys.stderr)
     test2 = test.stack().to_frame("total_reads").reindex(columns = ['total_reads', 'matched_idx1', 'matched_idx2','read_type', 'sample_name'])
     test2.index = test2.index.rename(['idx1','idx2'])
     array = test2.index.values
 
+    barcode_count = 0
     for i in array:
+        if barcode_count%1000==1:
+            print(f"Analyzed {barcode_count} barcodes...")
+        barcode_count += 1
+
         idx1 = i[0]
         idx2 = i[1]
 
@@ -649,8 +655,8 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     
-    if scan:
-        print(f"Scanning {fastqs[0]}...", file=sys.stderr)
+    if args.scan:
+        print(f"Scanning {args.fastqs[0]}...", file=sys.stderr)
         frender_scan(
                 args.b,
                 args.fastqs[0],
