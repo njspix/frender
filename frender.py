@@ -529,119 +529,78 @@ def frender_scan(barcode, fastq_1,
     if (preefix != '' and not preefix.endswith('_')):
         preefix = preefix + '_'
 
-    # DataFrame to store index hopping information
-    read_counts = pd.DataFrame(columns = ['read_idx1', 'read_idx2', 'matched_idx1', 'matched_idx2', 'class', 'sample_name', 'total_reads'])
+    test = pd.DataFrame()
+    record_count = 0
 
-    # Start processing data
-    with gzip.open(fastq_1, 'rt') as read1:
-        reads_1 = grouper(read1, 4, '')
+    with gzip.open('test.fastq.gz', 'rt') as read_file:
+        for read_head in islice(read_file, 0, None, 4):
+            if record_count%10000==1:
+                print(f"processed {record_count}")
+            
+            code = read_head.rstrip('\n').split(' ')[1].split(':')[-1]
+            idx1 = code.split('+')[0]
+            idx2 = code.split('+')[1]
 
-        barcode_dict = {}
-
-        record_count = 0
-        for record_1 in reads_1:
-            assert (len(record_1) == 4)
-            if (record_count%10000 == 1):
-                print(f"Processed {record_count} reads", file=sys.stderr)
+            try:
+                test.loc[idx1, idx2] += 1
+            except KeyError:
+                test.loc[idx1, idx2] = 1
             record_count += 1
 
-            # Parse record header line to compare name and extract barcode
-            r1_head = record_1[0].rstrip('\n').split(' ')
+    test2 = test.stack().to_frame("total_reads").reindex(columns = ['total_reads', 'matched_idx1', 'matched_idx2','read_type', 'sample_name'])
+    test2.index = test2.index.rename(['idx1','idx2'])
+    array = test2.index.values
 
-            # Barcode indices
-            code = r1_head[1].split(':')[-1] # full index name
-            idx1 = code.split('+')[0]        # index 1 in full name
-            idx2 = code.split('+')[1]        # index 2 in full name
+    for i in array:
+        idx1 = i[0]
+        idx2 = i[1]
 
-            if code in barcode_dict: # seen this combination before
+        idx1_matches = fuz_match_list(idx1, all_idx1)
+        idx2_matches = fuz_match_list(idx2, all_idx2)
 
-                # could be an index hop:
-                if (barcode_dict[code] == 'hop'):
+        if (bool(idx1_matches) and bool(idx2_matches)):
+            # Can find at least one barcode match for both indices
+            match_isec = set(idx1_matches).intersection(idx2_matches)
+            
+            if (len(match_isec) == 0):
+                #this is an index hop
+                matched_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
+                matched_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
+                
+                test2.loc[(idx1, idx2), 'matched_idx1'] = matched_idx1
+                test2.loc[(idx1, idx2), 'matched_idx2'] = matched_idx2
+                test2.loc[(idx1, idx2), 'read_type'] = 'index_hop'
+                test2.loc[(idx1, idx2), 'sample_name'] = ''
 
-                    # update hop count table
-                    idx1_matches = fuz_match_list(idx1, all_idx1)
-                    idx2_matches = fuz_match_list(idx2, all_idx2)
-                    i_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
-                    i_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
-                    read_counts.loc[i_idx1, i_idx2] += 1 
+            elif (len(match_isec) == 1):
+                # this is a good read
+                matched_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
+                matched_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
+                sample_name = indexes.index[match_isec.pop()]
+                
+                test2.loc[(idx1, idx2), 'matched_idx1'] = matched_idx1
+                test2.loc[(idx1, idx2), 'matched_idx2'] = matched_idx2
+                test2.loc[(idx1, idx2), 'read_type'] = 'demuxable'
+                test2.loc[(idx1, idx2), 'sample_name'] = sample_name
+            
+            else: 
+                # this is an ambiguous read
+                matched_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
+                matched_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
+                
+                test2.loc[(idx1, idx2), 'matched_idx1'] = matched_idx1
+                test2.loc[(idx1, idx2), 'matched_idx2'] = matched_idx2
+                test2.loc[(idx1, idx2), 'read_type'] = 'ambiguous'
+                test2.loc[(idx1, idx2), 'sample_name'] = ''
+        else:
+            # this is an undetermined read
+            test2.loc[(idx1, idx2), 'matched_idx1'] = ''
+            test2.loc[(idx1, idx2), 'matched_idx2'] = ''
+            test2.loc[(idx1, idx2), 'read_type'] = 'undetermined'
+            test2.loc[(idx1, idx2), 'sample_name'] = ''
 
-                # could be a conflict:
-                elif (barcode_dict[code] == 'conflict'):
-                    pass
-
-                # could be unkonwn:
-                elif (barcode_dict[code] == 'undetermined'):
-                    pass
-
-                # or it could be a valid demux:
-                elif barcode_dict[code] not in ['hop', 'conflict', 'undetermined']:
-                    pass
-
-            else: # need to process this read
-                idx1_matches = fuz_match_list(idx1, all_idx1)
-                idx2_matches = fuz_match_list(idx2, all_idx2)
-
-                if (bool(idx1_matches) and bool(idx2_matches)):
-                    # Can find at least one barcode match for both indices
-                    match_isec = set(idx1_matches).intersection(idx2_matches)
-
-                    if (len(match_isec) == 0):
-                        # No matches, so index hop
-                        barcode_dict[code] = 'hop' # add to known barcodes
-
-                        # This is currently imprecise. A 'hop' could match more than one barcode in either index, 
-                        # idx1_matches = [4] and idx2_matches = [2, 3]. In this case, the matched indices could 
-                        # be identical, or they could both be 1 substitution away from the target (bad index design, but that's not my problem here :-)
-                        # This doesn't account for that second case.
-                        i_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
-                        i_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
-                        try:
-                            read_counts.loc[i_idx1, i_idx2] += 1 
-                        except KeyError:
-                            # Combination of indices hasn't been initialized
-                            read_counts.loc[i_idx1, i_idx2] = 1  
-
-                    elif (len(match_isec) == 1):
-                        # good read; idx1 and idx2 line up in exactly one spot
-                        demux_id = indexes.index[match_isec.pop()]
-
-                        barcode_dict[code] = indexes.index.get_loc(demux_id)
-
-                        read_counts = read_counts.append({'read_idx1':idx1, 
-                                                          'read_idx2':idx2, 
-                                                          'matched_idx1':i_idx1, 
-                                                          'matched_idx2':i_idx2, 
-                                                          'class': 'demuxable', 
-                                                          'sample_name':demux_id, 
-                                                          'total_reads':1}, 
-                                                        ignore_index = True)
-
-                    else:
-                        # Read matches to more than one possible output file
-                        barcode_dict[code] = 'conflict'
-
-                        read_counts = read_counts.append({'read_idx1':idx1, 
-                                                          'read_idx2':idx2, 
-                                                          'matched_idx1':i_idx1, 
-                                                          'matched_idx2':i_idx2, 
-                                                          'class': 'ambiguous', 
-                                                          'sample_name':NA, 
-                                                          'total_reads':1}, 
-                                                        ignore_index = True)
-                else:
-                    # Can't find a match for at least one barcode
-                    barcode_dict[code] = 'undetermined'
-
-                    read_counts = read_counts.append({'read_idx1':idx1, 
-                                                      'read_idx2':idx2, 
-                                                      'matched_idx1':i_idx1, 
-                                                      'matched_idx2':i_idx2, 
-                                                      'class': 'undetermined', 
-                                                      'sample_name':NA, 
-                                                      'total_reads':1}, 
-                                                    ignore_index = True)
     # Write report
-    print(read_counts.tocsv())
+    print(test2.tocsv())
 
     #TODO: write out all information in csv format, e.g.:
     # idx_1,idx_2,class,sample_name,total_reads
