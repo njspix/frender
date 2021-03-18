@@ -505,8 +505,8 @@ def frender_scan(barcode, fastq_1,
     # has seven columns. There is one dataset with three columns, and this
     # is related to a collaborative project with human fetal DNA.
     if (len(test.columns) == 3):
-        print('WARNING: This barcode file only has 3 columns.', end=' ')
-        print('It likely is a single-indexed library')
+        print('WARNING: This barcode file only has 3 columns.', end=' ', file=sys.stderr)
+        print('It likely is a single-indexed library', file=sys.stderr)
         sys.exit(0)
 
     #TODO: Handle single index
@@ -529,53 +529,25 @@ def frender_scan(barcode, fastq_1,
     if (preefix != '' and not preefix.endswith('_')):
         preefix = preefix + '_'
 
-    # Open output files
-    r1_files = []
-    r2_files = []
-
-    for id in ids:
-        r1_files.append(open(f'{out_dir}{preefix}{id}_R1.fastq', 'w'))
-        r2_files.append(open(f'{out_dir}{preefix}{id}_R2.fastq', 'w'))
-        #r1_files.append(f'{out_dir}{preefix}{id}_R1.fastq')
-        #r2_files.append(f'{out_dir}{preefix}{id}_R2.fastq')
-
-    if (ihopped != ''):
-        r1_hop = open(f'{out_dir}{preefix}{ihopped}_R1.fastq', 'w')
-        r2_hop = open(f'{out_dir}{preefix}{ihopped}_R2.fastq', 'w')
-    if (cnflict != ''):
-        r1_con = open(f'{out_dir}{preefix}{cnflict}_R1.fastq', 'w')
-        r2_con = open(f'{out_dir}{preefix}{cnflict}_R2.fastq', 'w')
-    if (undeter != ''):
-        r1_und = open(f'{out_dir}{preefix}{undeter}_R1.fastq', 'w')
-        r2_und = open(f'{out_dir}{preefix}{undeter}_R2.fastq', 'w')
-
     # DataFrame to store index hopping information
     hops = pd.DataFrame()
 
     # Start processing data
-    with gzip.open(fastq_1, 'rt') as read1, gzip.open(fastq_2, 'rt') as read2:
+    with gzip.open(fastq_1, 'rt') as read1:
         reads_1 = grouper(read1, 4, '')
-        reads_2 = grouper(read2, 4, '')
 
         barcode_dict = {}
 
         record_count = 0
-        for record_1, record_2 in zip(reads_1, reads_2):
-            assert (len(record_1) == 4) and (len(record_2) == 4)
+        for record_1 in reads_1:
+            assert (len(record_1) == 4)
             if (record_count%10000 == 1):
-                print(f"Processed {record_count} reads")
+                print(f"Processed {record_count} reads", file=sys.stderr)
             record_count += 1
 
             # Parse record header line to compare name and extract barcode
             r1_head = record_1[0].rstrip('\n').split(' ')
-            r2_head = record_2[0].rstrip('\n').split(' ')
 
-            if (r1_head[0] != r2_head[0]):
-                print('WARNING: Skipping mismatched reads', end=' ')
-                print(f'{r1_head[0]} != {r2_head[0]} at line', end=' ')
-                print(f'{4*record_count} of {fastq_1} and {fastq_2}')
-                continue
-            
             # Barcode indices
             code = r1_head[1].split(':')[-1] # full index name
             idx1 = code.split('+')[0]        # index 1 in full name
@@ -586,13 +558,6 @@ def frender_scan(barcode, fastq_1,
                 # could be an index hop:
                 if (barcode_dict[code] == 'hop'):
 
-                    # write to files if requested
-                    if (ihopped != ''):
-                        for line in record_1:
-                            r1_hop.write(str(line))
-                        for line in record_2:
-                            r2_hop.write(str(line))
-
                     # update hop count table
                     idx1_matches = fuz_match_list(idx1, all_idx1)
                     idx2_matches = fuz_match_list(idx2, all_idx2)
@@ -601,25 +566,16 @@ def frender_scan(barcode, fastq_1,
                     hops.loc[i_idx1, i_idx2] += 1 
 
                 # could be a conflict:
-                elif (barcode_dict[code] == 'conflict') and (cnflict != ''):
-                    for line in record_1:
-                        r1_con.write(str(line))
-                    for line in record_2:
-                        r2_con.write(str(line))
+                elif (barcode_dict[code] == 'conflict'):
+                    pass
 
                 # could be unkonwn:
-                elif (barcode_dict[code] == 'undetermined') and (undeter != ''):
-                    for line in record_1:
-                        r1_und.write(str(line))
-                    for line in record_2:
-                        r2_und.write(str(line))
-                
+                elif (barcode_dict[code] == 'undetermined'):
+                    pass
+
                 # or it could be a valid demux:
                 elif barcode_dict[code] not in ['hop', 'conflict', 'undetermined']:
-                    for line in record_1:
-                        r1_files[barcode_dict[code]].write(str(line))
-                    for line in record_2:
-                        r2_files[barcode_dict[code]].write(str(line))
+                    pass
 
             else: # need to process this read
                 idx1_matches = fuz_match_list(idx1, all_idx1)
@@ -645,52 +601,19 @@ def frender_scan(barcode, fastq_1,
                             # Combination of indices hasn't been initialized
                             hops.loc[i_idx1, i_idx2] = 1  
 
-                        # Write to output file (if applicable)
-                        if (ihopped != ''):
-                            for line in record_1:
-                                r1_hop.write(str(line))
-                            for line in record_2:
-                                r2_hop.write(str(line))
                     elif (len(match_isec) == 1):
                         # good read; idx1 and idx2 line up in exactly one spot
                         demux_id = indexes.index[match_isec.pop()]
 
                         barcode_dict[code] = indexes.index.get_loc(demux_id)
-                        for line in record_1:
-                            r1_files[barcode_dict[code]].write(str(line))
-                        for line in record_2:
-                            r2_files[barcode_dict[code]].write(str(line))
+
                     else:
                         # Read matches to more than one possible output file
                         barcode_dict[code] = 'conflict'
-                        if (cnflict != ''):
-                            for line in record_1:
-                                r1_con.write(str(line))
-                            for line in record_2:
-                                r2_con.write(str(line))
+
                 else:
                     # Can't find a match for at least one barcode
                     barcode_dict[code] = 'undetermined'
-                    if (undeter != ''):
-                        for line in record_1:
-                            r1_und.write(str(line))
-                        for line in record_2:
-                            r2_und.write(str(line))
-
-    # Close output files
-    for i in range(len(r1_files)):
-        r1_files[i].close()
-        r2_files[i].close()
-
-    if (ihopped != ''):
-        r1_hop.close()
-        r2_hop.close()
-    if (cnflict != ''):
-        r1_con.close()
-        r2_con.close()
-    if (undeter != ''):
-        r1_und.close()
-        r2_und.close()
 
     # Write index hopping report
     hops = hops.reset_index().melt(id_vars='index',
@@ -699,6 +622,8 @@ def frender_scan(barcode, fastq_1,
     hops = hops[hops['num_hops_observed'] > 0]
     hops.columns = ['idx1', 'idx2', 'num_hops_observed']
     hops.to_csv(f'{out_dir}{preefix}barcode_hops.csv', index=False)
+
+    #TODO: write out other information in....
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -744,7 +669,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     if scan:
-        print(f"Scanning {fastqs[0]}...")
+        print(f"Scanning {fastqs[0]}...", file=sys.stderr)
         frender_scan(
                 args.b,
                 args.fastqs[0],
