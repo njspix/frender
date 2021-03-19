@@ -29,8 +29,8 @@ import sys
 try:
     import regex
 except ModuleNotFoundError:
-    print('ERROR: Install regex module')
-    print('\tpip install regex\tOR\tconda install -c conda-forge regex')
+    print('ERROR: Install regex module', file = sys.stderr)
+    print('\tpip install regex\tOR\tconda install -c conda-forge regex', file = sys.stderr)
     sys.exit(0)
 
 def grouper(iterable, n, fillvalue=None):
