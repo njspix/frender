@@ -59,10 +59,18 @@ def fuz_match_list(pattern, set_of_strings):
     Returns -
         list of where matches (with +/- 1 substitution) occur in set_of_strings
     """
-    pattern = regex.compile("(?:"+pattern+"){s<=1}", regex.IGNORECASE)
-    matches = [bool(regex.match(pattern, string)) for string in set_of_strings]
+    if set_of_strings == []:
+        return []
     
-    return [i for i, val in enumerate(matches) if val]
+    else:
+        pattern = regex.compile("(?:"+pattern+"){s<=1}", regex.IGNORECASE)
+        matches = [bool(regex.match(pattern, string)) for string in set_of_strings]
+        
+        return [i for i, val in enumerate(matches) if val]
+
+complement = str.maketrans('ATGCN', 'TACGN')
+def reverse_complement(string):
+    return(string.translate(complement)[::-1])
 
 def frender(barcode, fastq_1, fastq_2,
             out_dir='.', preefix='', ihopped='',
@@ -519,6 +527,12 @@ def frender_scan(barcode, fastq_1,
 
     all_idx1 = indexes['Index1'].tolist()
     all_idx2 = indexes['Index2'].tolist()
+
+    if args.rc:
+        all_rci2 = [reverse_complement(i) for i in indexes['Index2'].tolist()]
+    else: 
+        all_rci2 = []
+
     ids = list(indexes.index)
 
     # Create output directory and prep prefix
@@ -563,6 +577,7 @@ def frender_scan(barcode, fastq_1,
 
         idx1_matches = fuz_match_list(idx1, all_idx1)
         idx2_matches = fuz_match_list(idx2, all_idx2)
+        rci2_matches = fuz_match_list(idx2, all_rci2)
 
         if (bool(idx1_matches) and bool(idx2_matches)):
             # Can find at least one barcode match for both indices
@@ -573,10 +588,10 @@ def frender_scan(barcode, fastq_1,
                 matched_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
                 matched_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
                 
-                test2.loc[(idx1, idx2), 'matched_idx1'] = matched_idx1
-                test2.loc[(idx1, idx2), 'matched_idx2'] = matched_idx2
-                test2.loc[(idx1, idx2), 'read_type'] = 'index_hop'
-                test2.loc[(idx1, idx2), 'sample_name'] = ''
+                barcode_counts.loc[(idx1, idx2), 'matched_idx1'] = matched_idx1
+                barcode_counts.loc[(idx1, idx2), 'matched_idx2'] = matched_idx2
+                barcode_counts.loc[(idx1, idx2), 'read_type'] = 'index_hop'
+                barcode_counts.loc[(idx1, idx2), 'sample_name'] = ''
 
             elif (len(match_isec) == 1):
                 # this is a good read
@@ -584,26 +599,26 @@ def frender_scan(barcode, fastq_1,
                 matched_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
                 sample_name = indexes.index[match_isec.pop()]
                 
-                test2.loc[(idx1, idx2), 'matched_idx1'] = matched_idx1
-                test2.loc[(idx1, idx2), 'matched_idx2'] = matched_idx2
-                test2.loc[(idx1, idx2), 'read_type'] = 'demuxable'
-                test2.loc[(idx1, idx2), 'sample_name'] = sample_name
+                barcode_counts.loc[(idx1, idx2), 'matched_idx1'] = matched_idx1
+                barcode_counts.loc[(idx1, idx2), 'matched_idx2'] = matched_idx2
+                barcode_counts.loc[(idx1, idx2), 'read_type'] = 'demuxable'
+                barcode_counts.loc[(idx1, idx2), 'sample_name'] = sample_name
             
             else: 
                 # this is an ambiguous read
                 matched_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
                 matched_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
                 
-                test2.loc[(idx1, idx2), 'matched_idx1'] = matched_idx1
-                test2.loc[(idx1, idx2), 'matched_idx2'] = matched_idx2
-                test2.loc[(idx1, idx2), 'read_type'] = 'ambiguous'
-                test2.loc[(idx1, idx2), 'sample_name'] = ''
+                barcode_counts.loc[(idx1, idx2), 'matched_idx1'] = matched_idx1
+                barcode_counts.loc[(idx1, idx2), 'matched_idx2'] = matched_idx2
+                barcode_counts.loc[(idx1, idx2), 'read_type'] = 'ambiguous'
+                barcode_counts.loc[(idx1, idx2), 'sample_name'] = ''
         else:
             # this is an undetermined read
-            test2.loc[(idx1, idx2), 'matched_idx1'] = ''
-            test2.loc[(idx1, idx2), 'matched_idx2'] = ''
-            test2.loc[(idx1, idx2), 'read_type'] = 'undetermined'
-            test2.loc[(idx1, idx2), 'sample_name'] = ''
+            barcode_counts.loc[(idx1, idx2), 'matched_idx1'] = ''
+            barcode_counts.loc[(idx1, idx2), 'matched_idx2'] = ''
+            barcode_counts.loc[(idx1, idx2), 'read_type'] = 'undetermined'
+            barcode_counts.loc[(idx1, idx2), 'sample_name'] = ''
 
     # Write report
     print(barcode_counts.to_csv())
@@ -644,7 +659,12 @@ if __name__ == '__main__':
     parser.add_argument(
         '-s', '--scan', 
         action = 'store_true',
-        help='Scan a single fastq file, counting exact and inexact barcode matches, conflicting barcodes, index hops, and undetermined reads. No demultiplexing is performed.',
+        help='Scan a single fastq file, counting exact and inexact barcode matches, conflicting barcodes, index hops, and undetermined reads. No demultiplexing is performed.'
+    )
+    parser.add_argument(
+        '-rc',
+        action = 'store_true',
+        help='When used with --scan, also scan for reverse complement of index 2 (to check for mistakes with e.g. HiSeq 4000 and other systems)'
     )
 
     parser.add_argument('fastqs', nargs=argparse.REMAINDER) 
@@ -654,6 +674,7 @@ if __name__ == '__main__':
     if args.scan:
         print(f"Scanning {args.fastqs[0]}...", file=sys.stderr)
         frender_scan(
+                args.rc
                 args.b,
                 args.fastqs[0],
                 args.o,
