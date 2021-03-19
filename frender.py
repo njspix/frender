@@ -96,8 +96,8 @@ def frender(barcode, fastq_1, fastq_2,
     # has seven columns. There is one dataset with three columns, and this
     # is related to a collaborative project with human fetal DNA.
     if (len(test.columns) == 3):
-        print('WARNING: This barcode file only has 3 columns.', end=' ')
-        print('It likely is a single-indexed library')
+        print('WARNING: This barcode file only has 3 columns.', end=' ', file = sys.stderr)
+        print('It likely is a single-indexed library', file = sys.stderr)
         sys.exit(0)
 
     #TODO: Handle single index
@@ -154,7 +154,7 @@ def frender(barcode, fastq_1, fastq_2,
         for record_1, record_2 in zip(reads_1, reads_2):
             assert (len(record_1) == 4) and (len(record_2) == 4)
             if (record_count%10000 == 1):
-                print(f"Processed {record_count} reads")
+                print(f"Processed {record_count} reads", file = sys.stderr)
             record_count += 1
 
             # Parse record header line to compare name and extract barcode
@@ -162,9 +162,9 @@ def frender(barcode, fastq_1, fastq_2,
             r2_head = record_2[0].rstrip('\n').split(' ')
 
             if (r1_head[0] != r2_head[0]):
-                print('WARNING: Skipping mismatched reads', end=' ')
-                print(f'{r1_head[0]} != {r2_head[0]} at line', end=' ')
-                print(f'{4*record_count} of {fastq_1} and {fastq_2}')
+                print('WARNING: Skipping mismatched reads', end=' ', file = sys.stderr)
+                print(f'{r1_head[0]} != {r2_head[0]} at line', end=' ', file = sys.stderr)
+                print(f'{4*record_count} of {fastq_1} and {fastq_2}', file = sys.stderr)
                 continue
             
             # Barcode indices
@@ -322,8 +322,8 @@ def frender_se(barcode, fastq,
     # has seven columns. There is one dataset with three columns, and this
     # is related to a collaborative project with human fetal DNA.
     if (len(test.columns) == 3):
-        print('WARNING: This barcode file only has 3 columns.', end=' ')
-        print('It likely is a single-indexed library')
+        print('WARNING: This barcode file only has 3 columns.', end=' ', file = sys.stderr)
+        print('It likely is a single-indexed library', file = sys.stderr)
         sys.exit(0)
 
     #TODO: Handle single index
@@ -373,7 +373,7 @@ def frender_se(barcode, fastq,
         for record in reads:
             assert (len(record) == 4)
             if (record_count%10000 == 1):
-                print(f"Processed {record_count} reads")
+                print(f"Processed {record_count} reads", file = sys.stderr)
             record_count += 1
 
             # Parse record header line to compare name and extract barcode
@@ -505,8 +505,8 @@ def frender_scan(barcode, fastq_1,
     # has seven columns. There is one dataset with three columns, and this
     # is related to a collaborative project with human fetal DNA.
     if (len(test.columns) == 3):
-        print('WARNING: This barcode file only has 3 columns.', end=' ')
-        print('It likely is a single-indexed library')
+        print('WARNING: This barcode file only has 3 columns.', end=' ', file = sys.stderr)
+        print('It likely is a single-indexed library', file = sys.stderr)
         sys.exit(0)
 
     #TODO: Handle single index
