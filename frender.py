@@ -555,7 +555,7 @@ def frender_scan(barcode, fastq_1,
     barcode_count = 0
     for i in array:
         if barcode_count%1000==1:
-            print(f"Analyzed {barcode_count} barcodes...")
+            print(f"Analyzed {barcode_count} barcodes...", file = sys.stderr)
         barcode_count += 1
 
         idx1 = i[0]
@@ -606,11 +606,7 @@ def frender_scan(barcode, fastq_1,
             test2.loc[(idx1, idx2), 'sample_name'] = ''
 
     # Write report
-    print(test2.tocsv())
-
-    #TODO: write out all information in csv format, e.g.:
-    # idx_1,idx_2,class,sample_name,total_reads
-    # ACTGA,CGATG,{index_hop,ambiguous,undetermined,demuxable},{sample_name,NA},131245125
+    print(test2.to_csv())
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -693,6 +689,5 @@ if __name__ == '__main__':
             )
         else: raise TypeError("Wrong number of fastq files provided. Please specify only one or two fastq files to use as input!")
 
-#TODO: add 'scan' mode. Rip through read1 Undetermined_* file (doesn't matter if single or paired-end...)
-# Classify and count all the barcodes present, then dump into csv or some other report. 
+#TODO: 
 # Have an option to proceed with standard frender() if any un-demultiplexed reads are found.
