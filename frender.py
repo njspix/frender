@@ -529,7 +529,7 @@ def frender_scan(barcode, fastq_1,
     if (preefix != '' and not preefix.endswith('_')):
         preefix = preefix + '_'
 
-    test = pd.DataFrame()
+    barcode_counts = pd.DataFrame()
     record_count = 0
 
     with gzip.open(fastq_1, 'rt') as read_file:
@@ -542,18 +542,18 @@ def frender_scan(barcode, fastq_1,
             idx2 = code.split('+')[1]
 
             try:
-                test.loc[idx1, idx2] += 1
+                barcode_counts.loc[idx1, idx2] += 1
             except KeyError:
-                test.loc[idx1, idx2] = 1
+                barcode_counts.loc[idx1, idx2] = 1
             record_count += 1
 
     print("Scanning complete! Analyzing barcodes...", file = sys.stderr)
-    test2 = test.stack().to_frame("total_reads").reindex(columns = ['total_reads', 'matched_idx1', 'matched_idx2','read_type', 'sample_name'])
-    test2.index = test2.index.rename(['idx1','idx2'])
-    array = test2.index.values
+    barcode_counts = barcode_counts.stack().to_frame("total_reads").reindex(columns = ['total_reads', 'matched_idx1', 'matched_idx2','read_type', 'sample_name'])
+    barcode_counts.index = barcode_counts.index.rename(['idx1','idx2'])
+    all_found_indexes = barcode_counts.index.values
 
     barcode_count = 0
-    for i in array:
+    for i in all_found_indexes:
         if barcode_count%1000==1:
             print(f"Analyzed {barcode_count} barcodes...", file = sys.stderr)
         barcode_count += 1
@@ -606,7 +606,7 @@ def frender_scan(barcode, fastq_1,
             test2.loc[(idx1, idx2), 'sample_name'] = ''
 
     # Write report
-    print(test2.to_csv())
+    print(barcode_counts.to_csv())
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
