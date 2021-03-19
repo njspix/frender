@@ -33,6 +33,8 @@ except ModuleNotFoundError:
     print('\tpip install regex\tOR\tconda install -c conda-forge regex', file = sys.stderr)
     sys.exit(0)
 
+counter_interval = 100000
+
 def grouper(iterable, n, fillvalue=None):
     """Collect data into fixed-length chunks or blocks.
        Ex. grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
@@ -161,7 +163,7 @@ def frender(barcode, fastq_1, fastq_2,
         record_count = 0
         for record_1, record_2 in zip(reads_1, reads_2):
             assert (len(record_1) == 4) and (len(record_2) == 4)
-            if (record_count%10000 == 1):
+            if (record_count%counter_interval == 1):
                 print(f"Processed {record_count} reads", file = sys.stderr)
             record_count += 1
 
@@ -358,15 +360,15 @@ def frender_se(barcode, fastq,
     r1_files = []
 
     for id in ids:
-        r1_files.append(open(f'{out_dir}{preefix}{id}_R1.fastq', 'w'))
+        r1_files.append(open(f'{out_dir}{preefix}{id}.fastq', 'w'))
         #r1_files.append(f'{out_dir}{preefix}{id}_R1.fastq')
 
     if (ihopped != ''):
-        r1_hop = open(f'{out_dir}{preefix}{ihopped}_R1.fastq', 'w')
+        r1_hop = open(f'{out_dir}{preefix}{ihopped}.fastq', 'w')
     if (cnflict != ''):
-        r1_con = open(f'{out_dir}{preefix}{cnflict}_R1.fastq', 'w')
+        r1_con = open(f'{out_dir}{preefix}{cnflict}.fastq', 'w')
     if (undeter != ''):
-        r1_und = open(f'{out_dir}{preefix}{undeter}_R1.fastq', 'w')
+        r1_und = open(f'{out_dir}{preefix}{undeter}.fastq', 'w')
 
     # DataFrame to store index hopping information
     hops = pd.DataFrame()
@@ -380,7 +382,7 @@ def frender_se(barcode, fastq,
         record_count = 0
         for record in reads:
             assert (len(record) == 4)
-            if (record_count%10000 == 1):
+            if (record_count%counter_interval == 1):
                 print(f"Processed {record_count} reads", file = sys.stderr)
             record_count += 1
 
@@ -548,7 +550,7 @@ def frender_scan(rc_mode, barcode, fastq_1,
 
     with gzip.open(fastq_1, 'rt') as read_file:
         for read_head in islice(read_file, 0, None, 4):
-            if record_count%10000==1:
+            if record_count%counter_interval==1:
                 print(f"Processed {record_count} reads...", file = sys.stderr)
             
             code = read_head.rstrip('\n').split(' ')[1].split(':')[-1]
@@ -562,13 +564,13 @@ def frender_scan(rc_mode, barcode, fastq_1,
             record_count += 1
 
     print("Scanning complete! Analyzing barcodes...", file = sys.stderr)
-    barcode_counts = barcode_counts.stack().to_frame("total_reads").reindex(columns = ['total_reads', 'matched_idx1', 'matched_idx2','read_type', 'sample_name', 'is_rc_idx2'])
+    barcode_counts = barcode_counts.stack().to_frame("total_reads").reindex(columns = ['total_reads', 'matched_idx1', 'matched_idx2','read_type', 'sample_name', 'idx2_is_reverse_complement'])
     barcode_counts.index = barcode_counts.index.rename(['idx1','idx2'])
     all_found_indexes = barcode_counts.index.values
 
     barcode_count = 0
     for i in all_found_indexes:
-        if barcode_count%1000==1:
+        if barcode_count%(counter_interval/10)==1:
             print(f"Analyzed {barcode_count} barcodes...", file = sys.stderr)
         barcode_count += 1
 
@@ -705,20 +707,33 @@ if __name__ == '__main__':
     parser.add_argument(
         '-s', '--scan', 
         action = 'store_true',
-        help='Scan a single fastq file, counting exact and inexact barcode matches, conflicting barcodes, index hops, and undetermined reads. No demultiplexing is performed.'
+        help='''Scan a single fastq file, counting exact and inexact barcode matches, conflicting barcodes, index hops, and undetermined reads. 
+                No demultiplexing is performed. 
+                ****** 
+                Streams CSV formatted output (idx1, idx2, total_reads, matched_idx1, matched_idx2,read_type, sample_name, idx2_is_reverse_complement)
+                to stdout (make sure to redirect to a file!) 
+                ******
+             '''
     )
     parser.add_argument(
         '-rc',
         action = 'store_true',
         help='When used with --scan, also scan for reverse complement of index 2 (to check for mistakes with e.g. HiSeq 4000 and other systems)'
     )
-
-    parser.add_argument('fastqs', nargs=argparse.REMAINDER) 
+    parser.add_argument(
+        'fastqs', 
+        nargs=argparse.REMAINDER,
+        help = '''Gzipped fastq files to be scanned or demultiplexed. If -s is specified, only one fastq is used. 
+                  If -s is NOT specified, and one fastq is supplied, one set of fastqs will be produced (single-end mode)
+                  If -s is NOT specified, and two fastqs are supplied, two sets of fastqs will be produced (R1 and R2; paired-end mode)
+               '''
+        ) 
 
     args = parser.parse_args()
     
     if args.scan:
-        print(f"Scanning {args.fastqs[0]}...", file=sys.stderr)
+        rc_mode_text = "both supplied and reverse-complement index 2 sequences" if args.rc else "index 2 sequences as supplied"
+        print(f"Scanning {args.fastqs[0]} using {rc_mode_text}...", file=sys.stderr)
         frender_scan(
                 args.rc,
                 args.b,
