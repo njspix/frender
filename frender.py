@@ -491,7 +491,7 @@ def frender_se(barcode, fastq,
     hops.columns = ['idx1', 'idx2', 'num_hops_observed']
     hops.to_csv(f'{out_dir}{preefix}barcode_hops.csv', index=False)
 
-def frender_scan(barcode, fastq_1,
+def frender_scan(rc_mode, barcode, fastq_1,
             out_dir='.', preefix=''):
     """Scan a single fastq file, counting exact and inexact barcode matches, conflicting barcodes, index hops, and undetermined reads. No demultiplexing is performed.
 
@@ -528,7 +528,7 @@ def frender_scan(barcode, fastq_1,
     all_idx1 = indexes['Index1'].tolist()
     all_idx2 = indexes['Index2'].tolist()
 
-    if args.rc:
+    if rc_mode:
         all_rci2 = [reverse_complement(i) for i in indexes['Index2'].tolist()]
     else: 
         all_rci2 = []
@@ -562,7 +562,7 @@ def frender_scan(barcode, fastq_1,
             record_count += 1
 
     print("Scanning complete! Analyzing barcodes...", file = sys.stderr)
-    barcode_counts = barcode_counts.stack().to_frame("total_reads").reindex(columns = ['total_reads', 'matched_idx1', 'matched_idx2','read_type', 'sample_name'])
+    barcode_counts = barcode_counts.stack().to_frame("total_reads").reindex(columns = ['total_reads', 'matched_idx1', 'matched_idx2','read_type', 'sample_name', 'is_rc_idx2'])
     barcode_counts.index = barcode_counts.index.rename(['idx1','idx2'])
     all_found_indexes = barcode_counts.index.values
 
@@ -577,7 +577,6 @@ def frender_scan(barcode, fastq_1,
 
         idx1_matches = fuz_match_list(idx1, all_idx1)
         idx2_matches = fuz_match_list(idx2, all_idx2)
-        rci2_matches = fuz_match_list(idx2, all_rci2)
 
         if (bool(idx1_matches) and bool(idx2_matches)):
             # Can find at least one barcode match for both indices
@@ -592,6 +591,7 @@ def frender_scan(barcode, fastq_1,
                 barcode_counts.loc[(idx1, idx2), 'matched_idx2'] = matched_idx2
                 barcode_counts.loc[(idx1, idx2), 'read_type'] = 'index_hop'
                 barcode_counts.loc[(idx1, idx2), 'sample_name'] = ''
+                barcode_counts.loc[(idx1, idx2), 'is_rc_idx2'] = 'FALSE'
 
             elif (len(match_isec) == 1):
                 # this is a good read
@@ -603,6 +603,7 @@ def frender_scan(barcode, fastq_1,
                 barcode_counts.loc[(idx1, idx2), 'matched_idx2'] = matched_idx2
                 barcode_counts.loc[(idx1, idx2), 'read_type'] = 'demuxable'
                 barcode_counts.loc[(idx1, idx2), 'sample_name'] = sample_name
+                barcode_counts.loc[(idx1, idx2), 'is_rc_idx2'] = 'FALSE'
             
             else: 
                 # this is an ambiguous read
@@ -613,12 +614,57 @@ def frender_scan(barcode, fastq_1,
                 barcode_counts.loc[(idx1, idx2), 'matched_idx2'] = matched_idx2
                 barcode_counts.loc[(idx1, idx2), 'read_type'] = 'ambiguous'
                 barcode_counts.loc[(idx1, idx2), 'sample_name'] = ''
+                barcode_counts.loc[(idx1, idx2), 'is_rc_idx2'] = 'FALSE'
         else:
             # this is an undetermined read
+
+            if rc_mode:
+                # check to see whether we can demux this or assign to another category using the reverse complement of idx2:
+                rci2_matches = fuz_match_list(idx2, all_rci2)
+
+                if (bool(idx1_matches) and bool(rci2_matches)):
+                    # Can find at least one barcode match for both indices
+                    match_isec = set(idx1_matches).intersection(rci2_matches)
+
+                    if (len(match_isec) == 0):
+                        #this is an index hop
+                        matched_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
+                        matched_idx2 = set([all_idx2[i] for i in rci2_matches]).pop()
+
+                        barcode_counts.loc[(idx1, idx2), 'matched_idx1'] = matched_idx1
+                        barcode_counts.loc[(idx1, idx2), 'matched_idx2'] = matched_idx2
+                        barcode_counts.loc[(idx1, idx2), 'read_type'] = 'index_hop'
+                        barcode_counts.loc[(idx1, idx2), 'sample_name'] = ''
+                        barcode_counts.loc[(idx1, idx2), 'is_rc_idx2'] = 'TRUE'
+
+                    elif (len(match_isec) == 1):
+                        # this is a good read
+                        matched_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
+                        matched_idx2 = set([all_idx2[i] for i in rci2_matches]).pop()
+                        sample_name = indexes.index[match_isec.pop()]
+                        
+                        barcode_counts.loc[(idx1, idx2), 'matched_idx1'] = matched_idx1
+                        barcode_counts.loc[(idx1, idx2), 'matched_idx2'] = matched_idx2
+                        barcode_counts.loc[(idx1, idx2), 'read_type'] = 'demuxable'
+                        barcode_counts.loc[(idx1, idx2), 'sample_name'] = sample_name
+                        barcode_counts.loc[(idx1, idx2), 'is_rc_idx2'] = 'TRUE'
+
+                    else: 
+                        # this is an ambiguous read
+                        matched_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
+                        matched_idx2 = set([all_idx2[i] for i in rci2_matches]).pop()
+
+                        barcode_counts.loc[(idx1, idx2), 'matched_idx1'] = matched_idx1
+                        barcode_counts.loc[(idx1, idx2), 'matched_idx2'] = matched_idx2
+                        barcode_counts.loc[(idx1, idx2), 'read_type'] = 'ambiguous'
+                        barcode_counts.loc[(idx1, idx2), 'sample_name'] = ''
+                        barcode_counts.loc[(idx1, idx2), 'is_rc_idx2'] = 'TRUE'
+
             barcode_counts.loc[(idx1, idx2), 'matched_idx1'] = ''
             barcode_counts.loc[(idx1, idx2), 'matched_idx2'] = ''
             barcode_counts.loc[(idx1, idx2), 'read_type'] = 'undetermined'
             barcode_counts.loc[(idx1, idx2), 'sample_name'] = ''
+            barcode_counts.loc[(idx1, idx2), 'is_rc_idx2'] = ''
 
     # Write report
     print(barcode_counts.to_csv())
@@ -674,7 +720,7 @@ if __name__ == '__main__':
     if args.scan:
         print(f"Scanning {args.fastqs[0]}...", file=sys.stderr)
         frender_scan(
-                args.rc
+                args.rc,
                 args.b,
                 args.fastqs[0],
                 args.o,
