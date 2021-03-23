@@ -554,8 +554,6 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix=""):
     else:
         all_rci2 = []
 
-    ids = list(indexes.index)
-
     # Create output directory and prep prefix
     out_dir = out_dir.rstrip("/") + "/"  # Add trailing slash
     if out_dir != "./":
@@ -625,7 +623,7 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix=""):
                 barcode_counts.loc[(idx1, idx2), "matched_idx2"] = matched_idx2
                 barcode_counts.loc[(idx1, idx2), "read_type"] = "index_hop"
                 barcode_counts.loc[(idx1, idx2), "sample_name"] = ""
-                barcode_counts.loc[(idx1, idx2), "is_rc_idx2"] = "FALSE"
+                barcode_counts.loc[(idx1, idx2), "idx2_is_reverse_complement"] = "FALSE"
 
             elif len(match_isec) == 1:
                 # this is a good read
@@ -637,7 +635,7 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix=""):
                 barcode_counts.loc[(idx1, idx2), "matched_idx2"] = matched_idx2
                 barcode_counts.loc[(idx1, idx2), "read_type"] = "demuxable"
                 barcode_counts.loc[(idx1, idx2), "sample_name"] = sample_name
-                barcode_counts.loc[(idx1, idx2), "is_rc_idx2"] = "FALSE"
+                barcode_counts.loc[(idx1, idx2), "idx2_is_reverse_complement"] = "FALSE"
 
             else:
                 # this is an ambiguous read
@@ -648,7 +646,7 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix=""):
                 barcode_counts.loc[(idx1, idx2), "matched_idx2"] = matched_idx2
                 barcode_counts.loc[(idx1, idx2), "read_type"] = "ambiguous"
                 barcode_counts.loc[(idx1, idx2), "sample_name"] = ""
-                barcode_counts.loc[(idx1, idx2), "is_rc_idx2"] = "FALSE"
+                barcode_counts.loc[(idx1, idx2), "idx2_is_reverse_complement"] = "FALSE"
         else:
             # this is an undetermined read
 
@@ -669,7 +667,9 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix=""):
                         barcode_counts.loc[(idx1, idx2), "matched_idx2"] = matched_idx2
                         barcode_counts.loc[(idx1, idx2), "read_type"] = "index_hop"
                         barcode_counts.loc[(idx1, idx2), "sample_name"] = ""
-                        barcode_counts.loc[(idx1, idx2), "is_rc_idx2"] = "TRUE"
+                        barcode_counts.loc[
+                            (idx1, idx2), "idx2_is_reverse_complement"
+                        ] = "TRUE"
 
                     elif len(match_isec) == 1:
                         # this is a good read
@@ -681,7 +681,9 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix=""):
                         barcode_counts.loc[(idx1, idx2), "matched_idx2"] = matched_idx2
                         barcode_counts.loc[(idx1, idx2), "read_type"] = "demuxable"
                         barcode_counts.loc[(idx1, idx2), "sample_name"] = sample_name
-                        barcode_counts.loc[(idx1, idx2), "is_rc_idx2"] = "TRUE"
+                        barcode_counts.loc[
+                            (idx1, idx2), "idx2_is_reverse_complement"
+                        ] = "TRUE"
 
                     else:
                         # this is an ambiguous read
@@ -692,13 +694,15 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix=""):
                         barcode_counts.loc[(idx1, idx2), "matched_idx2"] = matched_idx2
                         barcode_counts.loc[(idx1, idx2), "read_type"] = "ambiguous"
                         barcode_counts.loc[(idx1, idx2), "sample_name"] = ""
-                        barcode_counts.loc[(idx1, idx2), "is_rc_idx2"] = "TRUE"
+                        barcode_counts.loc[
+                            (idx1, idx2), "idx2_is_reverse_complement"
+                        ] = "TRUE"
 
             barcode_counts.loc[(idx1, idx2), "matched_idx1"] = ""
             barcode_counts.loc[(idx1, idx2), "matched_idx2"] = ""
             barcode_counts.loc[(idx1, idx2), "read_type"] = "undetermined"
             barcode_counts.loc[(idx1, idx2), "sample_name"] = ""
-            barcode_counts.loc[(idx1, idx2), "is_rc_idx2"] = ""
+            barcode_counts.loc[(idx1, idx2), "idx2_is_reverse_complement"] = ""
 
     # Write report
     print(barcode_counts.to_csv())
