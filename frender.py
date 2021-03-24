@@ -81,6 +81,17 @@ complement = str.maketrans("ATGCN", "TACGN")
 def reverse_complement(string):
     return string.translate(complement)[::-1]
 
+def read_fastq_barcodes(file):
+    last = None
+    while True:
+        if not last:
+            for line in file:
+                if line[0] in ">@":
+                    last = line[:-1]
+                    break
+        yield last.split(" ")[-1].split(":")[-1]
+        last = None
+
 
 def frender(
     barcode,
@@ -566,13 +577,12 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix=""):
     record_count = 0
 
     with gzip.open(fastq_1, "rt") as read_file:
-        for read_head in islice(read_file, 0, None, 4):
+        for barcode in read_fastq_barcodes(read_file):
             if record_count % counter_interval == 1:
                 print(f"Processed {record_count} reads...", file=sys.stderr)
 
-            code = read_head.rstrip("\n").split(" ")[1].split(":")[-1]
-            idx1 = code.split("+")[0]
-            idx2 = code.split("+")[1]
+            idx1 = barcode.split("+")[0]
+            idx2 = barcode.split("+")[1]
 
             try:
                 barcode_counts.loc[idx1, idx2] += 1
