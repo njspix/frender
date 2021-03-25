@@ -38,6 +38,18 @@ except ModuleNotFoundError:
 
 counter_interval = 250000
 
+def read_scan_results(csv_file):
+    '''Read a csv file produced by the frender_scan function and parse into an internally useful format.
+        Inputs: csv file with (at least) the following columns: read type, idx1, idx2, sample_name
+        Returns: dict in the following format: {'CCTGTACT+ANACATCG': 'index_hop', 'CGCTACAG+ANACATCG': 'FT-SA81396'}
+        Possible values for 'value' are: any sample name in barcodeAssociationTable, 'index_hop', 'ambiguous'
+        If a barcode is not in the dict, it was labeled as 'undetermined'. 
+    '''
+    info = pd.read_csv(csv_file)
+    info = info[info.read_type != 'undetermined'].assign(idx = info.idx1 + "+" + info.idx2).loc[:, ('idx', 'read_type', 'sample_name')].set_index("idx")
+    info['sample_name'] = info.apply(lambda x: x['read_type'] if pd.isnull(x['sample_name']) else x['sample_name'], axis = 1)
+    return(info.to_dict()['sample_name']) 
+
 def process_index(k):
     return tuple(k.split("+")) 
 
@@ -595,28 +607,15 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix=""):
             record_count += 1
 
     print("Scanning complete! Analyzing barcodes...", file=sys.stderr)
+    # Turn the barcode_counter dict into a pd dataframe
     barcode_counts = pd.DataFrame.from_dict(barcode_counter, orient = "index", columns=["total_reads"])
+    # Turn the single index into a pd MultiIndex (split barcodes on "+")
     barcode_counts['idx1'], barcode_counts['idx2'] = zip(*map(process_index, barcode_counts.index))
     barcode_counts.set_index(['idx1', 'idx2'], inplace = True)
 
-    # barcode_counts = (
-    #     barcode_counts.stack()
-    #     .to_frame("total_reads")
-    #     .reindex(
-    #         columns=[
-    #             "total_reads",
-    #             "matched_idx1",
-    #             "matched_idx2",
-    #             "read_type",
-    #             "sample_name",
-    #             "idx2_is_reverse_complement",
-    #         ]
-    #     )
-    # )
-    # barcode_counts.index = barcode_counts.index.rename(["idx1", "idx2"])
     all_found_indexes = barcode_counts.index.values
-
     barcode_count = 0
+    
     for i in all_found_indexes:
         if barcode_count % (counter_interval / 250) == 1:
             print(f"Analyzed {barcode_count} barcodes...", file=sys.stderr)
