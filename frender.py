@@ -25,6 +25,7 @@ import pandas as pd
 import gzip
 from itertools import zip_longest, islice
 import sys
+from time import perf_counter
 
 try:
     import regex
@@ -35,8 +36,10 @@ except ModuleNotFoundError:
     )
     sys.exit(0)
 
-counter_interval = 100000
+counter_interval = 250000
 
+def process_index(k):
+    return tuple(k.split("+")) 
 
 def grouper(iterable, n, fillvalue=None):
     """Collect data into fixed-length chunks or blocks.
@@ -573,44 +576,49 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix=""):
     if preefix != "" and not preefix.endswith("_"):
         preefix = preefix + "_"
 
-    barcode_counts = pd.DataFrame()
-    record_count = 0
+    barcode_counter = {}
+    record_count, new_count = 0, 0
+    start = perf_counter()
 
     with gzip.open(fastq_1, "rt") as read_file:
         for barcode in read_fastq_barcodes(read_file):
             if record_count % counter_interval == 1:
-                print(f"Processed {record_count} reads...", file=sys.stderr)
-
-            idx1 = barcode.split("+")[0]
-            idx2 = barcode.split("+")[1]
+                end = perf_counter()
+                print(f"Processed {record_count} reads in {round(end-start, 2)} sec, {round(counter_interval/(end-start),0)} reads/sec, {new_count} new barcodes found", file=sys.stderr)
+                start, new_count = perf_counter(), 0
 
             try:
-                barcode_counts.loc[idx1, idx2] += 1
+                barcode_counter[code] += 1
             except KeyError:
-                barcode_counts.loc[idx1, idx2] = 1
+                barcode_counter[code] = 1
+                new_count += 1
             record_count += 1
 
     print("Scanning complete! Analyzing barcodes...", file=sys.stderr)
-    barcode_counts = (
-        barcode_counts.stack()
-        .to_frame("total_reads")
-        .reindex(
-            columns=[
-                "total_reads",
-                "matched_idx1",
-                "matched_idx2",
-                "read_type",
-                "sample_name",
-                "idx2_is_reverse_complement",
-            ]
-        )
-    )
-    barcode_counts.index = barcode_counts.index.rename(["idx1", "idx2"])
+    barcode_counts = pd.DataFrame.from_dict(barcode_counter, orient = "index", columns=["total_reads"])
+    barcode_counts['idx1'], barcode_counts['idx2'] = zip(*map(process_index, barcode_counts.index))
+    barcode_counts.set_index(['idx1', 'idx2'], inplace = True)
+
+    # barcode_counts = (
+    #     barcode_counts.stack()
+    #     .to_frame("total_reads")
+    #     .reindex(
+    #         columns=[
+    #             "total_reads",
+    #             "matched_idx1",
+    #             "matched_idx2",
+    #             "read_type",
+    #             "sample_name",
+    #             "idx2_is_reverse_complement",
+    #         ]
+    #     )
+    # )
+    # barcode_counts.index = barcode_counts.index.rename(["idx1", "idx2"])
     all_found_indexes = barcode_counts.index.values
 
     barcode_count = 0
     for i in all_found_indexes:
-        if barcode_count % (counter_interval / 10) == 1:
+        if barcode_count % (counter_interval / 250) == 1:
             print(f"Analyzed {barcode_count} barcodes...", file=sys.stderr)
         barcode_count += 1
 
