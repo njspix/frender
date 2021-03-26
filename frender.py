@@ -117,16 +117,6 @@ complement = str.maketrans("ATGCN", "TACGN")
 def reverse_complement(string):
     return string.translate(complement)[::-1]
 
-    last = None
-    while True:
-        if not last:
-            for line in file:
-                if line[0] in ">@":
-                    last = line[:-1]
-                    break
-        yield last.split(" ")[-1].split(":")[-1]
-        last = None
-
 
 def frender(
     barcode,
@@ -346,7 +336,7 @@ def frender(
                         # good read; idx1 and idx2 line up in exactly one spot
                         demux_id = indexes.index[match_isec.pop()]
 
-                        barcode_dict[code] = indexes.index.get_loc(demux_id)
+                        barcode_dict[code] = demux_id
                         for line in record_1:
                             r1_files[barcode_dict[code]].write(str(line))
                         for line in record_2:
