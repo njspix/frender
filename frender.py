@@ -219,12 +219,12 @@ def frender(
         preefix = preefix + "_"
 
     # Open output files
-    r1_files = []
-    r2_files = []
+    r1_files = {}
+    r2_files = {}
 
     for id in ids:
-        r1_files.append(open(f"{out_dir}{preefix}{id}_R1.fastq", "w"))
-        r2_files.append(open(f"{out_dir}{preefix}{id}_R2.fastq", "w"))
+        r1_files[id] = open(f"{out_dir}{preefix}{id}_R1.fastq", "w")
+        r2_files[id] = open(f"{out_dir}{preefix}{id}_R2.fastq", "w")
         # r1_files.append(f'{out_dir}{preefix}{id}_R1.fastq')
         # r2_files.append(f'{out_dir}{preefix}{id}_R2.fastq')
 
@@ -369,9 +369,10 @@ def frender(
                             r2_und.write(str(line))
 
     # Close output files
-    for i in range(len(r1_files)):
-        r1_files[i].close()
-        r2_files[i].close()
+    for key in r1_files:
+        r1_files[key].close()
+    for key in r2_files:
+        r2_files[key].close()
 
     if ihopped != "":
         r1_hop.close()
