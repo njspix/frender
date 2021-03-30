@@ -215,8 +215,6 @@ def frender(
     for id in ids:
         r1_files[id] = open(f"{out_dir}{preefix}{id}_R1.fastq", "w")
         r2_files[id] = open(f"{out_dir}{preefix}{id}_R2.fastq", "w")
-        # r1_files.append(f'{out_dir}{preefix}{id}_R1.fastq')
-        # r2_files.append(f'{out_dir}{preefix}{id}_R2.fastq')
 
     if ihopped != "":
         r1_hop = open(f"{out_dir}{preefix}{ihopped}_R1.fastq", "w")
@@ -421,16 +419,40 @@ def frender_se(
         print("It likely is a single-indexed library", file=sys.stderr)
         sys.exit(0)
 
-    # TODO: Handle single index
-    # TODO: Check barcodes are all the same length, match [ATCGatcg]
-    if test[0][0].startswith("Acc") or test[0][0].startswith("Client"):
-        indexes = pd.read_csv(barcode, usecols=cols, index_col="AccessionID")
-    else:
-        indexes = pd.read_csv(barcode, header=None, names=cols, index_col="AccessionID")
+    if test.values.flatten().tolist() == [
+        "idx1",
+        "idx2",
+        "total_reads",
+        "matched_idx1",
+        "matched_idx2",
+        "read_type",
+        "sample_name",
+        "idx2_is_reverse_complement",
+    ]:
+        print("frender scan csv file detected!", file=sys.stderr)
+        barcode_dict, ids = read_scan_results(barcode)
+        using_scan_results = True
 
-    all_idx1 = indexes["Index1"].tolist()
-    all_idx2 = indexes["Index2"].tolist()
-    ids = list(indexes.index)
+    else:
+        barcode_dict = {}
+        using_scan_results = False
+
+        # TODO: Handle single index
+        # TODO: Check barcodes are all the same length, match [ATCGatcg]
+        if test[0][0].startswith("Acc") or test[0][0].startswith("Client"):
+            indexes = pd.read_csv(barcode, usecols=cols, index_col="AccessionID")
+        else:
+            indexes = pd.read_csv(
+                barcode, header=None, names=cols, index_col="AccessionID"
+            )
+
+        ids = list(indexes.index)
+
+        # these are only created if we are working from scratch (no scan results). They are not needed if we have scan results, because we'll never have to process a barcode
+        all_idx1 = indexes["Index1"].tolist()
+        all_idx2 = indexes["Index2"].tolist()
+        # DataFrame to store index hopping information
+        hops = pd.DataFrame()
 
     # Create output directory and prep prefix
     out_dir = out_dir.rstrip("/") + "/"  # Add trailing slash
@@ -440,12 +462,11 @@ def frender_se(
     if preefix != "" and not preefix.endswith("_"):
         preefix = preefix + "_"
 
-    # Open output file
-    r1_files = []
+    # Open output files
+    r1_files = {}
 
     for id in ids:
-        r1_files.append(open(f"{out_dir}{preefix}{id}.fastq", "w"))
-        # r1_files.append(f'{out_dir}{preefix}{id}_R1.fastq')
+        r1_files[id] = open(f"{out_dir}{preefix}{id}.fastq", "w")
 
     if ihopped != "":
         r1_hop = open(f"{out_dir}{preefix}{ihopped}.fastq", "w")
@@ -454,14 +475,9 @@ def frender_se(
     if undeter != "":
         r1_und = open(f"{out_dir}{preefix}{undeter}.fastq", "w")
 
-    # DataFrame to store index hopping information
-    hops = pd.DataFrame()
-
     # Start processing data
     with gzip.open(fastq, "rt") as read1:
         reads = grouper(read1, 4, "")
-
-        barcode_dict = {}
 
         record_count = 0
         for record in reads:
@@ -475,13 +491,14 @@ def frender_se(
 
             # Barcode indices
             code = r1_head[1].split(":")[-1]  # full index name
-            idx1 = code.split("+")[0]  # index 1 in full name
-            idx2 = code.split("+")[1]  # index 2 in full name
+
+            if not using_scan_results:
+                idx1 = code.split("+")[0]  # index 1 in full name
+                idx2 = code.split("+")[1]  # index 2 in full name
 
             if code in barcode_dict:  # seen this combination before
-
                 # could be an index hop:
-                if barcode_dict[code] == "hop":
+                if barcode_dict[code] == "index_hop":
 
                     # write to files if requested
                     if ihopped != "":
@@ -489,14 +506,15 @@ def frender_se(
                             r1_hop.write(str(line))
 
                     # update hop count table
-                    idx1_matches = fuz_match_list(idx1, all_idx1)
-                    idx2_matches = fuz_match_list(idx2, all_idx2)
-                    i_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
-                    i_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
-                    hops.loc[i_idx1, i_idx2] += 1
+                    if not using_scan_results:
+                        idx1_matches = fuz_match_list(idx1, all_idx1)
+                        idx2_matches = fuz_match_list(idx2, all_idx2)
+                        i_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
+                        i_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
+                        hops.loc[i_idx1, i_idx2] += 1
 
                 # could be a conflict:
-                elif (barcode_dict[code] == "conflict") and (cnflict != ""):
+                elif (barcode_dict[code] == "ambiguous") and (cnflict != ""):
                     for line in record:
                         r1_con.write(str(line))
 
@@ -506,11 +524,16 @@ def frender_se(
                         r1_und.write(str(line))
 
                 # or it could be a valid demux:
-                elif barcode_dict[code] not in ["hop", "conflict", "undetermined"]:
+                elif barcode_dict[code] not in [
+                    "index_hop",
+                    "ambiguous",
+                    "undetermined",
+                ]:
                     for line in record:
                         r1_files[barcode_dict[code]].write(str(line))
 
             else:  # need to process this read
+                assert not using_scan_results
                 idx1_matches = fuz_match_list(idx1, all_idx1)
                 idx2_matches = fuz_match_list(idx2, all_idx2)
 
@@ -520,7 +543,7 @@ def frender_se(
 
                     if len(match_isec) == 0:
                         # No matches, so index hop
-                        barcode_dict[code] = "hop"  # add to known barcodes
+                        barcode_dict[code] = "index_hop"  # add to known barcodes
 
                         # This is currently imprecise. A 'hop' could match more than one barcode in either index,
                         # idx1_matches = [4] and idx2_matches = [2, 3]. In this case, the matched indices could
@@ -542,12 +565,12 @@ def frender_se(
                         # good read; idx1 and idx2 line up in exactly one spot
                         demux_id = indexes.index[match_isec.pop()]
 
-                        barcode_dict[code] = indexes.index.get_loc(demux_id)
+                        barcode_dict[code] = demux_id
                         for line in record:
                             r1_files[barcode_dict[code]].write(str(line))
                     else:
                         # Read matches to more than one possible output file
-                        barcode_dict[code] = "conflict"
+                        barcode_dict[code] = "ambiguous"
                         if cnflict != "":
                             for line in record:
                                 r1_con.write(str(line))
@@ -559,8 +582,8 @@ def frender_se(
                             r1_und.write(str(line))
 
     # Close output files
-    for i in range(len(r1_files)):
-        r1_files[i].close()
+    for key in r1_files:
+        r1_files[key].close()
 
     if ihopped != "":
         r1_hop.close()
@@ -570,12 +593,13 @@ def frender_se(
         r1_und.close()
 
     # Write index hopping report
-    hops = hops.reset_index().melt(
-        id_vars="index", var_name="idx2", value_name="num_hops_observed"
-    )
-    hops = hops[hops["num_hops_observed"] > 0]
-    hops.columns = ["idx1", "idx2", "num_hops_observed"]
-    hops.to_csv(f"{out_dir}{preefix}barcode_hops.csv", index=False)
+    if not using_scan_results:
+        hops = hops.reset_index().melt(
+            id_vars="index", var_name="idx2", value_name="num_hops_observed"
+        )
+        hops = hops[hops["num_hops_observed"] > 0]
+        hops.columns = ["idx1", "idx2", "num_hops_observed"]
+        hops.to_csv(f"{out_dir}{preefix}barcode_hops.csv", index=False)
 
 
 def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix=""):
