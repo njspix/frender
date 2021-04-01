@@ -738,7 +738,7 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix=""):
                 barcode_counts.loc[(idx1, idx2), "sample_name"] = ""
                 barcode_counts.loc[(idx1, idx2), "idx2_is_reverse_complement"] = "FALSE"
         else:
-            # this is an undetermined read
+            # not finding anything yet, should we try reverse complementing index 2?
 
             if rc_mode:
                 # check to see whether we can demux this or assign to another category using the reverse complement of idx2:
@@ -787,12 +787,19 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix=""):
                         barcode_counts.loc[
                             (idx1, idx2), "idx2_is_reverse_complement"
                         ] = "TRUE"
+                else:  # this is for sure an undetermined read
+                    barcode_counts.loc[(idx1, idx2), "matched_idx1"] = ""
+                    barcode_counts.loc[(idx1, idx2), "matched_idx2"] = ""
+                    barcode_counts.loc[(idx1, idx2), "read_type"] = "undetermined"
+                    barcode_counts.loc[(idx1, idx2), "sample_name"] = ""
+                    barcode_counts.loc[(idx1, idx2), "idx2_is_reverse_complement"] = ""
 
-            barcode_counts.loc[(idx1, idx2), "matched_idx1"] = ""
-            barcode_counts.loc[(idx1, idx2), "matched_idx2"] = ""
-            barcode_counts.loc[(idx1, idx2), "read_type"] = "undetermined"
-            barcode_counts.loc[(idx1, idx2), "sample_name"] = ""
-            barcode_counts.loc[(idx1, idx2), "idx2_is_reverse_complement"] = ""
+            else:
+                barcode_counts.loc[(idx1, idx2), "matched_idx1"] = ""
+                barcode_counts.loc[(idx1, idx2), "matched_idx2"] = ""
+                barcode_counts.loc[(idx1, idx2), "read_type"] = "undetermined"
+                barcode_counts.loc[(idx1, idx2), "sample_name"] = ""
+                barcode_counts.loc[(idx1, idx2), "idx2_is_reverse_complement"] = ""
 
     # Write report
     print(barcode_counts.to_csv())
