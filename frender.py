@@ -121,14 +121,81 @@ def reverse_complement(string):
     return string.translate(complement)[::-1]
 
 
-def write_read_to_file(checkvar, record1, r1_file, record2=None, r2_file=None):
-    """Write record1 to r1_file (and record2 to r2_file, if present) iff checkvar != "" """
+def write_read_to_file(checkvar, records, files):
+    """Write records to files iff checkvar != "" """
     if checkvar != "":
-        for line in record1:
-            r1_file.write(str(line))
-        if (r2_file != None) & (record2 != None):
-            for line in record2:
-                r2_file.write(str(line))
+        if isinstance(files, (tuple, list)):
+            assert len(records) == len(files)
+            for record, file in zip(records, files):
+                for line in record:
+                    file.write(str(line))
+        else:
+            for line in records:
+                files.write(str(line))
+
+
+def analyze_barcode(idx1, idx2, all_indexes, barcode_counts_df, num_subs, rc=False):
+
+    all_idx1 = all_indexes["Index1"].tolist()
+    all_idx2 = all_indexes["Index2"].tolist()
+
+    idx1_matches = fuz_match_list(idx1, all_idx1, num_subs)
+    idx2_matches = fuz_match_list(idx2, all_idx2, num_subs)
+
+    if bool(idx1_matches) and bool(idx2_matches):
+        # Can find at least one barcode match for both indices
+        match_isec = set(idx1_matches).intersection(idx2_matches)
+
+        if len(match_isec) == 0:
+            # this is an index hop
+            matched_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
+            matched_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
+
+            update_barcode_counts_df(
+                barcode_counts_df,
+                (idx1, idx2),
+                (matched_idx1, matched_idx2, "index_hop", "", "FALSE"),
+            )
+
+        elif len(match_isec) == 1:
+            # this is a good read
+            matched_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
+            matched_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
+            sample_name = all_indexes.index[match_isec.pop()]
+
+            update_barcode_counts_df(
+                barcode_counts_df,
+                (idx1, idx2),
+                (matched_idx1, matched_idx2, "demuxable", sample_name, "FALSE"),
+            )
+
+        else:
+            # this is an ambiguous read
+            matched_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
+            matched_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
+
+            update_barcode_counts_df(
+                barcode_counts_df,
+                (idx1, idx2),
+                (matched_idx1, matched_idx2, "ambiguous", "", "FALSE"),
+            )
+
+    else:
+        # not finding anything yet, should we try reverse complementing index 2?
+        if rc:
+            all_indexes["Index2"] = all_indexes["Index2"].apply(
+                lambda row: reverse_complement(row)
+            )
+            analyze_barcode(
+                idx1, idx2, all_indexes, barcode_counts_df, num_subs=num_subs, rc=False
+            )
+
+        else:
+            update_barcode_counts_df(
+                barcode_counts_df,
+                (idx1, idx2),
+                ("", "", "undetermined", "", ""),
+            )
 
 
 def update_barcode_counts_df(df, indices, values):
@@ -291,7 +358,7 @@ def frender(
                 if barcode_dict[code] == "index_hop":
 
                     # write to files if requested
-                    write_read_to_file(ihopped, record_1, r1_hop, record_2, r2_hop)
+                    write_read_to_file(ihopped, (record_1, record_2), (r1_hop, r2_hop))
 
                     # update hop count table
                     if not using_scan_results:
@@ -303,11 +370,11 @@ def frender(
 
                 # could be a conflict:
                 elif barcode_dict[code] == "ambiguous":
-                    write_read_to_file(cnflict, record_1, r1_con, record_2, r2_con)
+                    write_read_to_file(cnflict, (record_1, record_2), (r1_con, r2_con))
 
                 # could be unkonwn:
                 elif barcode_dict[code] == "undetermined":
-                    write_read_to_file(undeter, record_1, r1_und, record_2, r2_und)
+                    write_read_to_file(undeter, (record_1, record_2), (r1_und, r2_und))
 
                 # or it could be a valid demux:
                 elif barcode_dict[code] not in [
@@ -317,10 +384,8 @@ def frender(
                 ]:
                     write_read_to_file(
                         True,
-                        record_1,
-                        r1_files[barcode_dict[code]],
-                        record_2,
-                        r2_files[barcode_dict[code]],
+                        (record_1, record_2),
+                        (r1_files[barcode_dict[code]], r2_files[barcode_dict[code]]),
                     )
 
             else:  # need to process this read; should never get here if using_scan_results
@@ -374,7 +439,7 @@ def frender(
                 else:
                     # Can't find a match for at least one barcode
                     barcode_dict[code] = "undetermined"
-                    write_read_to_file(undeter, record_1, r1_und, record_2, r2_und)
+                    write_read_to_file(undeter, (record_1, record_2), (r1_und, r2_und))
 
     # Close output files
     for key in r1_files:
@@ -654,14 +719,6 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix="", num_subs=1)
     else:
         indexes = pd.read_csv(barcode, header=None, names=cols, index_col="AccessionID")
 
-    all_idx1 = indexes["Index1"].tolist()
-    all_idx2 = indexes["Index2"].tolist()
-
-    if rc_mode:
-        all_rci2 = [reverse_complement(i) for i in indexes["Index2"].tolist()]
-    else:
-        all_rci2 = []
-
     # Create output directory and prep prefix
     out_dir = out_dir.rstrip("/") + "/"  # Add trailing slash
     if out_dir != "./":
@@ -712,114 +769,7 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix="", num_subs=1)
             print(f"Analyzed {barcode_count} barcodes...", file=sys.stderr)
         barcode_count += 1
 
-        idx1 = i[0]
-        idx2 = i[1]
-
-        idx1_matches = fuz_match_list(idx1, all_idx1, num_subs)
-        idx2_matches = fuz_match_list(idx2, all_idx2, num_subs)
-
-        if bool(idx1_matches) and bool(idx2_matches):
-            # Can find at least one barcode match for both indices
-            match_isec = set(idx1_matches).intersection(idx2_matches)
-
-            if len(match_isec) == 0:
-                # this is an index hop
-                matched_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
-                matched_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
-
-                update_barcode_counts_df(
-                    barcode_counts,
-                    (idx1, idx2),
-                    (matched_idx1, matched_idx2, "index_hop", "", "FALSE"),
-                )
-
-            elif len(match_isec) == 1:
-                # this is a good read
-                matched_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
-                matched_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
-                sample_name = indexes.index[match_isec.pop()]
-
-                update_barcode_counts_df(
-                    barcode_counts,
-                    (idx1, idx2),
-                    (matched_idx1, matched_idx2, "demuxable", sample_name, "FALSE"),
-                )
-
-            else:
-                # this is an ambiguous read
-                matched_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
-                matched_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
-
-                update_barcode_counts_df(
-                    barcode_counts,
-                    (idx1, idx2),
-                    (matched_idx1, matched_idx2, "ambiguous", "", "FALSE"),
-                )
-
-        else:
-            # not finding anything yet, should we try reverse complementing index 2?
-
-            if rc_mode:
-                # check to see whether we can demux this or assign to another category using the reverse complement of idx2:
-                rci2_matches = fuz_match_list(idx2, all_rci2, num_subs)
-
-                if bool(idx1_matches) and bool(rci2_matches):
-                    # Can find at least one barcode match for both indices
-                    match_isec = set(idx1_matches).intersection(rci2_matches)
-
-                    if len(match_isec) == 0:
-                        # this is an index hop
-                        matched_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
-                        matched_idx2 = set([all_idx2[i] for i in rci2_matches]).pop()
-
-                        update_barcode_counts_df(
-                            barcode_counts,
-                            (idx1, idx2),
-                            (matched_idx1, matched_idx2, "index_hop", "", "TRUE"),
-                        )
-
-                    elif len(match_isec) == 1:
-                        # this is a good read
-                        matched_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
-                        matched_idx2 = set([all_idx2[i] for i in rci2_matches]).pop()
-                        sample_name = indexes.index[match_isec.pop()]
-
-                        update_barcode_counts_df(
-                            barcode_counts,
-                            (idx1, idx2),
-                            (
-                                matched_idx1,
-                                matched_idx2,
-                                "demuxable",
-                                sample_name,
-                                "TRUE",
-                            ),
-                        )
-
-                    else:
-                        # this is an ambiguous read
-                        matched_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
-                        matched_idx2 = set([all_idx2[i] for i in rci2_matches]).pop()
-
-                        update_barcode_counts_df(
-                            barcode_counts,
-                            (idx1, idx2),
-                            (matched_idx1, matched_idx2, "ambiguous", "", "TRUE"),
-                        )
-
-                else:  # this is for sure an undetermined read
-                    update_barcode_counts_df(
-                        barcode_counts,
-                        (idx1, idx2),
-                        ("", "", "undetermined", "", ""),
-                    )
-
-            else:
-                update_barcode_counts_df(
-                    barcode_counts,
-                    (idx1, idx2),
-                    ("", "", "undetermined", "", ""),
-                )
+        analyze_barcode(i[0], i[1], indexes, barcode_counts, num_subs=num_subs, rc=True)
 
     # Write report
     print(barcode_counts.to_csv())
