@@ -121,6 +121,18 @@ def reverse_complement(string):
     return string.translate(complement)[::-1]
 
 
+def write_read_to_file(checkvar, record1, r1_file, record2=None, r2_file=None):
+    """Write record1 to r1_file (and record2 to r2_file, if present) iff checkvar != "" """
+    if checkvar == "":
+        break
+    else:
+        for line in record1:
+            r1_file.write(str(line))
+        if r2_file != None & record2 != None:
+            for line in record2:
+                r2_file.write(str(line))
+
+
 def update_barcode_counts_df(df, indices, values):
     """Update the dataframe df at the location specified by tuple of indices (idx1, idx2) with the tuple of values
     (matched_idx1, matched_idx2, read_type, sample_name, idx2_is_reverse_complement)
@@ -281,11 +293,7 @@ def frender(
                 if barcode_dict[code] == "index_hop":
 
                     # write to files if requested
-                    if ihopped != "":
-                        for line in record_1:
-                            r1_hop.write(str(line))
-                        for line in record_2:
-                            r2_hop.write(str(line))
+                    write_read_to_file(ihopped, record_1, r1_hop, record_2, r2_hop)
 
                     # update hop count table
                     if not using_scan_results:
@@ -296,18 +304,12 @@ def frender(
                         hops.loc[i_idx1, i_idx2] += 1
 
                 # could be a conflict:
-                elif (barcode_dict[code] == "ambiguous") and (cnflict != ""):
-                    for line in record_1:
-                        r1_con.write(str(line))
-                    for line in record_2:
-                        r2_con.write(str(line))
+                elif barcode_dict[code] == "ambiguous":
+                    write_read_to_file(cnflict, record_1, r1_con, record_2, r2_con)
 
                 # could be unkonwn:
-                elif (barcode_dict[code] == "undetermined") and (undeter != ""):
-                    for line in record_1:
-                        r1_und.write(str(line))
-                    for line in record_2:
-                        r2_und.write(str(line))
+                elif barcode_dict[code] == "undetermined":
+                    write_read_to_file(undeter, record_1, r1_und, record_2, r2_und)
 
                 # or it could be a valid demux:
                 elif barcode_dict[code] not in [
@@ -315,10 +317,13 @@ def frender(
                     "ambiguous",
                     "undetermined",
                 ]:
-                    for line in record_1:
-                        r1_files[barcode_dict[code]].write(str(line))
-                    for line in record_2:
-                        r2_files[barcode_dict[code]].write(str(line))
+                    write_read_to_file(
+                        True,
+                        record_1,
+                        r1_files[barcode_dict[code]],
+                        record_2,
+                        r2_files[barcode_dict[code]],
+                    )
 
             else:  # need to process this read; should never get here if using_scan_results
                 assert not using_scan_results
@@ -371,11 +376,7 @@ def frender(
                 else:
                     # Can't find a match for at least one barcode
                     barcode_dict[code] = "undetermined"
-                    if undeter != "":
-                        for line in record_1:
-                            r1_und.write(str(line))
-                        for line in record_2:
-                            r2_und.write(str(line))
+                    write_read_to_file(undeter, record_1, r1_und, record_2, r2_und)
 
     # Close output files
     for key in r1_files:
@@ -530,9 +531,7 @@ def frender_se(
                 if barcode_dict[code] == "index_hop":
 
                     # write to files if requested
-                    if ihopped != "":
-                        for line in record:
-                            r1_hop.write(str(line))
+                    write_read_to_file(ihopped, record, r1_hop)
 
                     # update hop count table
                     if not using_scan_results:
@@ -543,14 +542,12 @@ def frender_se(
                         hops.loc[i_idx1, i_idx2] += 1
 
                 # could be a conflict:
-                elif (barcode_dict[code] == "ambiguous") and (cnflict != ""):
-                    for line in record:
-                        r1_con.write(str(line))
+                elif barcode_dict[code] == "ambiguous":
+                    write_read_to_file(cnflict, record, r1_con)
 
                 # could be unkonwn:
-                elif (barcode_dict[code] == "undetermined") and (undeter != ""):
-                    for line in record:
-                        r1_und.write(str(line))
+                elif barcode_dict[code] == "undetermined":
+                    write_read_to_file(undeter, record, r1_und)
 
                 # or it could be a valid demux:
                 elif barcode_dict[code] not in [
@@ -558,8 +555,7 @@ def frender_se(
                     "ambiguous",
                     "undetermined",
                 ]:
-                    for line in record:
-                        r1_files[barcode_dict[code]].write(str(line))
+                    write_read_to_file(True, record, r1_files[barcode_dict[code]])
 
             else:  # need to process this read
                 assert not using_scan_results
@@ -587,28 +583,22 @@ def frender_se(
                             hops.loc[i_idx1, i_idx2] = 1
 
                         # Write to output file (if applicable)
-                        if ihopped != "":
-                            for line in record:
-                                r1_hop.write(str(line))
+                        write_read_to_file(ihopped, record, r1_hop)
+
                     elif len(match_isec) == 1:
                         # good read; idx1 and idx2 line up in exactly one spot
-                        demux_id = indexes.index[match_isec.pop()]
+                        barcode_dict[code] = indexes.index[match_isec.pop()]
+                        write_read_to_file(True, record, r1_files[barcode_dict[code]])
 
-                        barcode_dict[code] = demux_id
-                        for line in record:
-                            r1_files[barcode_dict[code]].write(str(line))
                     else:
                         # Read matches to more than one possible output file
                         barcode_dict[code] = "ambiguous"
-                        if cnflict != "":
-                            for line in record:
-                                r1_con.write(str(line))
+                        write_read_to_file(cnflict, record, r1_con)
+
                 else:
                     # Can't find a match for at least one barcode
                     barcode_dict[code] = "undetermined"
-                    if undeter != "":
-                        for line in record:
-                            r1_und.write(str(line))
+                    write_read_to_file(undeter, record, r1_und)
 
     # Close output files
     for key in r1_files:
