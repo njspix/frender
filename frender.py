@@ -123,12 +123,10 @@ def reverse_complement(string):
 
 def write_read_to_file(checkvar, record1, r1_file, record2=None, r2_file=None):
     """Write record1 to r1_file (and record2 to r2_file, if present) iff checkvar != "" """
-    if checkvar == "":
-        break
-    else:
+    if checkvar != "":
         for line in record1:
             r1_file.write(str(line))
-        if r2_file != None & record2 != None:
+        if (r2_file != None) & (record2 != None):
             for line in record2:
                 r2_file.write(str(line))
 
