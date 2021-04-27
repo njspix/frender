@@ -134,7 +134,11 @@ def write_read_to_file(checkvar, records, files):
                 files.write(str(line))
 
 
-def analyze_barcode(idx1, idx2, all_indexes, barcode_counts_df, num_subs, rc=False):
+def analyze_barcode(
+    idx1, idx2, all_indexes, barcode_counts_df, num_subs, try_rc=False, is_rc=False
+):
+
+    rc_status = str(is_rc)
 
     all_idx1 = all_indexes["Index1"].tolist()
     all_idx2 = all_indexes["Index2"].tolist()
@@ -154,7 +158,7 @@ def analyze_barcode(idx1, idx2, all_indexes, barcode_counts_df, num_subs, rc=Fal
             update_barcode_counts_df(
                 barcode_counts_df,
                 (idx1, idx2),
-                (matched_idx1, matched_idx2, "index_hop", "", "FALSE"),
+                (matched_idx1, matched_idx2, "index_hop", "", rc_status),
             )
 
         elif len(match_isec) == 1:
@@ -166,7 +170,7 @@ def analyze_barcode(idx1, idx2, all_indexes, barcode_counts_df, num_subs, rc=Fal
             update_barcode_counts_df(
                 barcode_counts_df,
                 (idx1, idx2),
-                (matched_idx1, matched_idx2, "demuxable", sample_name, "FALSE"),
+                (matched_idx1, matched_idx2, "demuxable", sample_name, rc_status),
             )
 
         else:
@@ -177,17 +181,23 @@ def analyze_barcode(idx1, idx2, all_indexes, barcode_counts_df, num_subs, rc=Fal
             update_barcode_counts_df(
                 barcode_counts_df,
                 (idx1, idx2),
-                (matched_idx1, matched_idx2, "ambiguous", "", "FALSE"),
+                (matched_idx1, matched_idx2, "ambiguous", "", rc_status),
             )
 
     else:
         # not finding anything yet, should we try reverse complementing index 2?
-        if rc:
+        if try_rc:
             all_indexes["Index2"] = all_indexes["Index2"].apply(
                 lambda row: reverse_complement(row)
             )
             analyze_barcode(
-                idx1, idx2, all_indexes, barcode_counts_df, num_subs=num_subs, rc=False
+                idx1,
+                idx2,
+                all_indexes,
+                barcode_counts_df,
+                num_subs=num_subs,
+                try_rc=False,
+                is_rc=True,
             )
 
         else:
@@ -769,7 +779,15 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix="", num_subs=1)
             print(f"Analyzed {barcode_count} barcodes...", file=sys.stderr)
         barcode_count += 1
 
-        analyze_barcode(i[0], i[1], indexes, barcode_counts, num_subs=num_subs, rc=True)
+        analyze_barcode(
+            i[0],
+            i[1],
+            indexes,
+            barcode_counts,
+            num_subs=num_subs,
+            try_rc=rc_mode,
+            is_rc=False,
+        )
 
     # Write report
     print(barcode_counts.to_csv())
