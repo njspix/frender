@@ -38,6 +38,37 @@ except ModuleNotFoundError:
 
 counter_interval = 250000
 
+# Print iterations progress
+def printProgressBar(
+    iteration,
+    total,
+    prefix="",
+    suffix="",
+    decimals=1,
+    length=100,
+    fill="█",
+    printEnd="\r",
+):
+    """
+    Call in a loop to create terminal progress bar
+    @params:
+        iteration   - Required  : current iteration (Int)
+        total       - Required  : total iterations (Int)
+        prefix      - Optional  : prefix string (Str)
+        suffix      - Optional  : suffix string (Str)
+        decimals    - Optional  : positive number of decimals in percent complete (Int)
+        length      - Optional  : character length of bar (Int)
+        fill        - Optional  : bar fill character (Str)
+        printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
+    """
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    filledLength = int(length * iteration // total)
+    bar = fill * filledLength + "-" * (length - filledLength)
+    print(f"\r{prefix} |{bar}| {percent}% {suffix}", end=printEnd)
+    # Print New Line on Complete
+    if iteration == total:
+        print()
+
 
 def read_scan_results(csv_file):
     """Read a csv file produced by the frender_scan function and parse into an internally useful format.
@@ -772,8 +803,14 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix="", num_subs=1)
     barcode_count = 0
 
     for i in all_found_indexes:
-        if barcode_count % (counter_interval / 500) == 1:
-            print(f"Analyzed {barcode_count} barcodes...", file=sys.stderr)
+        if barcode_count % (counter_interval / 2500) == 1:
+            printProgressBar(
+                barcode_count,
+                len(barcode_counter),
+                prefix="Progress:",
+                suffix="complete",
+                length=50,
+            )
         barcode_count += 1
 
         analyze_barcode(
@@ -790,8 +827,8 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix="", num_subs=1)
                 rc_flag=True,
             )
 
-    # Write report
-    print(barcode_counts.to_csv())
+        # Write report
+        print(barcode_counts.to_csv())
 
 
 if __name__ == "__main__":
