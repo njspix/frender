@@ -827,8 +827,8 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix="", num_subs=1)
                 rc_flag=True,
             )
 
-        # Write report
-        print(barcode_counts.to_csv())
+    # Write report
+    print(barcode_counts.to_csv())
 
 
 if __name__ == "__main__":
