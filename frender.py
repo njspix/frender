@@ -172,20 +172,24 @@ def analyze_barcode(
 ):
 
     all_idx1 = all_indexes["Index1"].tolist()
-    all_idx2 = all_indexes["Index2"].tolist()
+    all_idx2 = (
+        [reverse_complement(i) for i in all_indexes["Index2"].tolist()]
+        if rc_flag
+        else all_indexes["Index2"].tolist()
+    )
 
     idx1_matches = fuz_match_list(idx1, all_idx1, num_subs)
     idx2_matches = fuz_match_list(idx2, all_idx2, num_subs)
 
     if bool(idx1_matches) and bool(idx2_matches):
         # Can find at least one barcode match for both indices
+        matched_idx1 = all_idx1[idx1_matches[0]]
+        matched_idx2 = all_idx2[idx2_matches[0]]
+
         match_isec = set(idx1_matches).intersection(idx2_matches)
 
         if len(match_isec) == 0:
             # this is an index hop
-            matched_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
-            matched_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
-
             update_barcode_counts_df(
                 barcode_counts_df,
                 (idx1, idx2),
@@ -194,10 +198,7 @@ def analyze_barcode(
 
         elif len(match_isec) == 1:
             # this is a good read
-            matched_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
-            matched_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
             sample_name = all_indexes.index[match_isec.pop()]
-
             update_barcode_counts_df(
                 barcode_counts_df,
                 (idx1, idx2),
@@ -206,9 +207,6 @@ def analyze_barcode(
 
         else:
             # this is an ambiguous read
-            matched_idx1 = set([all_idx1[i] for i in idx1_matches]).pop()
-            matched_idx2 = set([all_idx2[i] for i in idx2_matches]).pop()
-
             update_barcode_counts_df(
                 barcode_counts_df,
                 (idx1, idx2),
@@ -834,7 +832,7 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix="", num_subs=1)
         if rc_mode:
             analyze_barcode(
                 i[0],
-                reverse_complement(i[1]),
+                i[1],
                 indexes,
                 barcode_counts,
                 num_subs=num_subs,
