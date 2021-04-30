@@ -26,6 +26,8 @@ import gzip
 from itertools import zip_longest, islice
 import sys
 from time import perf_counter
+import numpy as np
+
 
 try:
     import regex
@@ -189,7 +191,7 @@ def analyze_barcode(
             update_barcode_counts_df(
                 barcode_counts_df,
                 (idx1, orig_idx2),
-                (matched_idx1, matched_idx2, "index_hop", "", rc_flag),
+                (matched_idx1, matched_idx2, "index_hop", np.nan, rc_flag),
             )
 
         elif len(match_isec) == 1:
@@ -212,14 +214,14 @@ def analyze_barcode(
             update_barcode_counts_df(
                 barcode_counts_df,
                 (idx1, orig_idx2),
-                (matched_idx1, matched_idx2, "ambiguous", "", rc_flag),
+                (matched_idx1, matched_idx2, "ambiguous", np.nan, rc_flag),
             )
 
     else:
         update_barcode_counts_df(
             barcode_counts_df,
             (idx1, orig_idx2),
-            ("", "", "undetermined", "", rc_flag),
+            (np.nan, np.nan, "undetermined", np.nan, rc_flag),
         )
 
 
@@ -238,15 +240,29 @@ def update_barcode_counts_df(df, indices, values):
             ],
         ] = values[0:4]
     else:
-        df.loc[
-            indices,
-            [
-                "matched_idx1",
-                "matched_rc_idx2",
-                "rc_read_type",
-                "rc_sample_name",
-            ],
-        ] = values[0:4]
+        if not df.loc[indices, ["matched_idx1"],].isnull()[
+            0
+        ]:  # matched_idx1 is not NA
+            # write all values except matched_idx1
+            df.loc[
+                indices,
+                [
+                    "matched_rc_idx2",
+                    "rc_read_type",
+                    "rc_sample_name",
+                ],
+            ] = values[1:4]
+
+        else:
+            df.loc[
+                indices,
+                [
+                    "matched_idx1",
+                    "matched_rc_idx2",
+                    "rc_read_type",
+                    "rc_sample_name",
+                ],
+            ] = values[0:4]
 
 
 def frender(
