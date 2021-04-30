@@ -171,8 +171,6 @@ def analyze_barcode(
     idx1, idx2, all_indexes, barcode_counts_df, num_subs, rc_flag=False
 ):
 
-    orig_idx2 = reverse_complement(idx2) if rc_flag else idx2
-
     all_idx1 = all_indexes["Index1"].tolist()
     all_idx2 = all_indexes["Index2"].tolist()
 
@@ -190,7 +188,7 @@ def analyze_barcode(
 
             update_barcode_counts_df(
                 barcode_counts_df,
-                (idx1, orig_idx2),
+                (idx1, idx2),
                 (matched_idx1, matched_idx2, "index_hop", np.nan, rc_flag),
             )
 
@@ -202,7 +200,7 @@ def analyze_barcode(
 
             update_barcode_counts_df(
                 barcode_counts_df,
-                (idx1, orig_idx2),
+                (idx1, idx2),
                 (matched_idx1, matched_idx2, "demuxable", sample_name, rc_flag),
             )
 
@@ -213,14 +211,14 @@ def analyze_barcode(
 
             update_barcode_counts_df(
                 barcode_counts_df,
-                (idx1, orig_idx2),
+                (idx1, idx2),
                 (matched_idx1, matched_idx2, "ambiguous", np.nan, rc_flag),
             )
 
     else:
         update_barcode_counts_df(
             barcode_counts_df,
-            (idx1, orig_idx2),
+            (idx1, idx2),
             (np.nan, np.nan, "undetermined", np.nan, rc_flag),
         )
 
