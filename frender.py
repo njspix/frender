@@ -713,7 +713,7 @@ def frender_se(
         hops.to_csv(f"{out_dir}{preefix}barcode_hops.csv", index=False)
 
 
-def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix="", num_subs=1):
+def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix="", num_subs=1, out_csv_name):
     """Scan a single fastq file, counting exact and inexact barcode matches, conflicting barcodes, index hops, and undetermined reads. No demultiplexing is performed.
 
     Inputs -
@@ -821,7 +821,7 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix="", num_subs=1)
 
     pandarallel.initialize()
     final = barcode_counts.parallel_apply(test_function2, axis=1)
-    print(final.to_csv())
+    final.to_csv(out_csv_name)
 
 
 if __name__ == "__main__":
@@ -885,6 +885,11 @@ if __name__ == "__main__":
              """,
     )
     parser.add_argument(
+        "-x",
+        help="output, csv format",
+        required=True,
+    )
+    parser.add_argument(
         "-rc",
         action="store_true",
         help="When used with --scan, also scan for reverse complement of index 2 (to check for mistakes with e.g. HiSeq 4000 and other systems)",
@@ -907,7 +912,9 @@ if __name__ == "__main__":
             else "index 2 sequences as supplied"
         )
         print(f"Scanning {args.fastqs[0]} using {rc_mode_text}...", file=sys.stderr)
-        frender_scan(args.rc, args.b, args.fastqs[0], args.o, args.p, args.numsubs)
+        frender_scan(
+            args.rc, args.b, args.fastqs[0], args.o, args.p, args.numsubs, args.x
+        )
 
     else:
         # single end case
