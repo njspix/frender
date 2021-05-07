@@ -27,7 +27,7 @@ from itertools import zip_longest, islice
 import sys
 from time import perf_counter
 import numpy as np
-
+from pandarallel import pandarallel
 
 try:
     import regex
@@ -167,9 +167,7 @@ def write_read_to_file(checkvar, records, files):
                 files.write(str(line))
 
 
-def analyze_barcode(
-    idx1, idx2, all_indexes, barcode_counts_df, num_subs, rc_flag=False
-):
+def analyze_barcode(idx1, idx2, all_indexes, num_subs, rc_flag=False):
 
     all_idx1 = all_indexes["Index1"].tolist()
     all_idx2 = (
@@ -190,75 +188,59 @@ def analyze_barcode(
 
         if len(match_isec) == 0:
             # this is an index hop
-            update_barcode_counts_df(
-                barcode_counts_df,
-                (idx1, idx2),
-                (matched_idx1, matched_idx2, "index_hop", np.nan, rc_flag),
-            )
+            return (matched_idx1, matched_idx2, "index_hop", np.nan, rc_flag)
 
         elif len(match_isec) == 1:
             # this is a good read
             sample_name = all_indexes.index[match_isec.pop()]
-            update_barcode_counts_df(
-                barcode_counts_df,
-                (idx1, idx2),
-                (matched_idx1, matched_idx2, "demuxable", sample_name, rc_flag),
-            )
+            return (matched_idx1, matched_idx2, "demuxable", sample_name, rc_flag)
 
         else:
             # this is an ambiguous read
-            update_barcode_counts_df(
-                barcode_counts_df,
-                (idx1, idx2),
-                (matched_idx1, matched_idx2, "ambiguous", np.nan, rc_flag),
-            )
+            return (matched_idx1, matched_idx2, "ambiguous", np.nan, rc_flag)
 
     else:
-        update_barcode_counts_df(
-            barcode_counts_df,
-            (idx1, idx2),
-            (np.nan, np.nan, "undetermined", np.nan, rc_flag),
-        )
+        return (np.nan, np.nan, "undetermined", np.nan, rc_flag)
 
 
-def update_barcode_counts_df(df, indices, values):
-    """Update the dataframe df at the location specified by tuple of indices (idx1, idx2) with the tuple of values
-    (matched_idx1, matched_idx2, read_type, sample_name, idx2_is_reverse_complement)
-    """
-    if not values[4]:  # rc_flag is not set
-        df.loc[
-            indices,
-            [
-                "matched_idx1",
-                "matched_idx2",
-                "read_type",
-                "sample_name",
-            ],
-        ] = values[0:4]
-    else:
-        if not df.loc[indices, ["matched_idx1"],].isnull()[
-            0
-        ]:  # matched_idx1 is not NA
-            # write all values except matched_idx1
-            df.loc[
-                indices,
-                [
-                    "matched_rc_idx2",
-                    "rc_read_type",
-                    "rc_sample_name",
-                ],
-            ] = values[1:4]
+# def update_barcode_counts_df(df, indices, values):
+#     """Update the dataframe df at the location specified by tuple of indices (idx1, idx2) with the tuple of values
+#     (matched_idx1, matched_idx2, read_type, sample_name, idx2_is_reverse_complement)
+#     """
+#     if not values[4]:  # rc_flag is not set
+#         df.loc[
+#             indices,
+#             [
+#                 "matched_idx1",
+#                 "matched_idx2",
+#                 "read_type",
+#                 "sample_name",
+#             ],
+#         ] = values[0:4]
+#     else:
+#         if not df.loc[indices, ["matched_idx1"],].isnull()[
+#             0
+#         ]:  # matched_idx1 is not NA
+#             # write all values except matched_idx1
+#             df.loc[
+#                 indices,
+#                 [
+#                     "matched_rc_idx2",
+#                     "rc_read_type",
+#                     "rc_sample_name",
+#                 ],
+#             ] = values[1:4]
 
-        else:
-            df.loc[
-                indices,
-                [
-                    "matched_idx1",
-                    "matched_rc_idx2",
-                    "rc_read_type",
-                    "rc_sample_name",
-                ],
-            ] = values[0:4]
+#         else:
+#             df.loc[
+#                 indices,
+#                 [
+#                     "matched_idx1",
+#                     "matched_rc_idx2",
+#                     "rc_read_type",
+#                     "rc_sample_name",
+#                 ],
+#             ] = values[0:4]
 
 
 def frender(
@@ -805,42 +787,40 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix="", num_subs=1)
     barcode_counts = pd.DataFrame.from_dict(
         barcode_counter, orient="index", columns=["total_reads"]
     )
-    # Turn the single index into a pd MultiIndex (split barcodes on "+")
-    barcode_counts["idx1"], barcode_counts["idx2"] = zip(
-        *map(process_index, barcode_counts.index)
-    )
-    barcode_counts.set_index(["idx1", "idx2"], inplace=True)
 
-    all_found_indexes = barcode_counts.index.values
-    barcode_count = 0
+    barcode_counts.index.name = "index"
+    barcode_counts.reset_index(inplace=True)
+    # barcode_count = 0
+    def test_function2(x):
+        idx1, idx2 = x["index"].split("+")
 
-    for i in all_found_indexes:
-        if barcode_count % (counter_interval / 2500) == 1:
-            printProgressBar(
-                barcode_count,
-                len(barcode_counter),
-                prefix="Progress:",
-                suffix="complete",
-                length=50,
-            )
-        barcode_count += 1
+        (
+            x["matched_idx1"],
+            x["matched_idx2"],
+            x["read_type"],
+            x["sample_name"],
+        ) = analyze_barcode(idx1, idx2, indexes, 1)[0:4]
 
-        analyze_barcode(
-            i[0], i[1], indexes, barcode_counts, num_subs=num_subs, rc_flag=False
-        )
+        if not x.isna()["matched_idx1"]:
+            (
+                x["matched_rc_idx2"],
+                x["rc_read_type"],
+                x["rc_sample_name"],
+            ) = analyze_barcode(idx1, idx2, indexes, 1, True)[1:4]
 
-        if rc_mode:
-            analyze_barcode(
-                i[0],
-                i[1],
-                indexes,
-                barcode_counts,
-                num_subs=num_subs,
-                rc_flag=True,
-            )
+        else:
+            (
+                x["matched_idx1"],
+                x["matched_rc_idx2"],
+                x["rc_read_type"],
+                x["rc_sample_name"],
+            ) = analyze_barcode(idx1, idx2, indexes, 1)[0:4]
 
-    # Write report
-    print(barcode_counts.to_csv())
+        return x
+
+    pandarallel.initialize()
+    final = barcode_counts.parallel_apply(test_function2, axis=1)
+    print(final.to_csv())
 
 
 if __name__ == "__main__":
