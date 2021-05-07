@@ -767,6 +767,7 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix="", num_subs=1)
                 print(
                     f"Processed {record_count} reads in {round(end-start, 2)} sec, {round(counter_interval/(end-start),0)} reads/sec, {new_count} new barcodes found",
                     file=sys.stderr,
+                    end="\r",
                 )
                 start, new_count = perf_counter(), 0
 
