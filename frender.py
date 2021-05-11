@@ -21,13 +21,14 @@ OUTPUT/RETURNS:
 """
 import argparse
 from pathlib import Path
+import csv
 import pandas as pd
 import gzip
-from itertools import zip_longest, islice
+from itertools import zip_longest, islice, repeat
 import sys
 from time import perf_counter
 import numpy as np
-from pandarallel import pandarallel
+from multiprocessing import Pool
 
 try:
     import regex
@@ -147,11 +148,8 @@ def fuz_match_list(pattern, set_of_strings, num_subs):
         return [i for i, val in enumerate(matches) if val]
 
 
-complement = str.maketrans("ATGCN", "TACGN")
-
-
 def reverse_complement(string):
-    return string.translate(complement)[::-1]
+    return string.translate(str.maketrans("ATGCN", "TACGN"))[::-1]
 
 
 def write_read_to_file(checkvar, records, files):
@@ -168,7 +166,6 @@ def write_read_to_file(checkvar, records, files):
 
 
 def analyze_barcode(idx1, idx2, all_indexes, num_subs, rc_flag=False):
-
     all_idx1 = all_indexes["Index1"].tolist()
     all_idx2 = (
         [reverse_complement(i) for i in all_indexes["Index2"].tolist()]
@@ -187,20 +184,73 @@ def analyze_barcode(idx1, idx2, all_indexes, num_subs, rc_flag=False):
         match_isec = set(idx1_matches).intersection(idx2_matches)
 
         if len(match_isec) == 0:
-            # this is an index hop
-            return (matched_idx1, matched_idx2, "index_hop", np.nan, rc_flag)
+            read_type = "index_hop"
+            sample_name = ""
 
         elif len(match_isec) == 1:
             # this is a good read
             sample_name = all_indexes.index[match_isec.pop()]
-            return (matched_idx1, matched_idx2, "demuxable", sample_name, rc_flag)
+            read_type = "demuxable"
 
         else:
             # this is an ambiguous read
-            return (matched_idx1, matched_idx2, "ambiguous", np.nan, rc_flag)
+            read_type = "ambiguous"
+            sample_name = ""
 
     else:
-        return (np.nan, np.nan, "undetermined", np.nan, rc_flag)
+        matched_idx1 = ""
+        matched_idx2 = ""
+        read_type = "undetermined"
+        sample_name = ""
+
+    return {
+        "matched_idx1": matched_idx1,
+        "matched_idx2": matched_idx2,
+        "read_type": read_type,
+        "sample_name": sample_name,
+        "rc_flag": rc_flag,
+    }
+
+
+def analyze_barcode_wrapper(barcode, num_reads, indexes):
+    idx1, idx2 = barcode.split("+")
+
+    # analyze barcode using supplied idx2
+    temp = analyze_barcode(idx1, idx2, indexes, 1)
+
+    # then if matched_idx1 is not na, update only 'matched_rc_idx2', 'rc_read_type', 'rc_sample_name' for rc idx2
+    if not temp["matched_idx1"] == "":
+        test2 = analyze_barcode(idx1, idx2, indexes, 1, True)
+        final = {
+            "idx1": idx1,
+            "idx2": idx2,
+            "reads": num_reads,
+            "matched_idx1": temp["matched_idx1"],
+            "matched_idx2": temp["matched_idx2"],
+            "read_type": temp["read_type"],
+            "sample_name": temp["sample_name"],
+            "matched_rc_idx2": test2["matched_idx2"],
+            "rc_read_type": test2["read_type"],
+            "rc_sample_name": test2["sample_name"],
+        }
+        return final
+
+    # but otherwise, update 'matched_idx1', 'matched_rc_idx2', 'rc_read_type', 'rc_sample_name' for rc idx2
+    else:
+        test2 = analyze_barcode(idx1, idx2, indexes, 1, True)
+        final = {
+            "idx1": idx1,
+            "idx2": idx2,
+            "reads": num_reads,
+            "matched_idx1": test2["matched_idx1"],
+            "matched_idx2": temp["matched_idx2"],
+            "read_type": temp["read_type"],
+            "sample_name": temp["sample_name"],
+            "matched_rc_idx2": test2["matched_idx2"],
+            "rc_read_type": test2["read_type"],
+            "rc_sample_name": test2["sample_name"],
+        }
+        return final
 
 
 # def update_barcode_counts_df(df, indices, values):
@@ -780,50 +830,34 @@ def frender_scan(
             record_count += 1
 
     print(
-        f"Scanning complete! Analyzing {len(barcode_counter)} barcodes...",
+        f"\nScanning complete! Analyzing {len(barcode_counter)} barcodes...",
         file=sys.stderr,
     )
     # Turn the barcode_counter dict into a pd dataframe
-    barcode_counts = pd.DataFrame.from_dict(
-        barcode_counter, orient="index", columns=["total_reads"]
-    )
-
-    barcode_counts.index.name = "index"
-    barcode_counts.reset_index(inplace=True)
-    # barcode_count = 0
-    def test_function2(x):
-        idx1, idx2 = x["index"].split("+")
-
-        (
-            x["matched_idx1"],
-            x["matched_idx2"],
-            x["read_type"],
-            x["sample_name"],
-        ) = analyze_barcode(idx1, idx2, indexes, 1)[0:4]
-
-        if not x.isna()["matched_idx1"]:
-            (
-                x["matched_rc_idx2"],
-                x["rc_read_type"],
-                x["rc_sample_name"],
-            ) = analyze_barcode(idx1, idx2, indexes, 1, True)[1:4]
-
-        else:
-            (
-                x["matched_idx1"],
-                x["matched_rc_idx2"],
-                x["rc_read_type"],
-                x["rc_sample_name"],
-            ) = analyze_barcode(idx1, idx2, indexes, 1)[0:4]
-
-        return x
 
     if cores > 1:
-        pandarallel.initialize(nb_workers=cores)
-        final = barcode_counts.parallel_apply(test_function2, axis=1)
+        with Pool(processes=cores) as pool:
+            print(f"multiprocessing with {cores} cores")
+            results = pool.starmap(
+                analyze_barcode_wrapper,
+                zip(barcode_counter, barcode_counter.values(), repeat(indexes)),
+            )
+
     else:
-        final = barcode_counts.apply(test_function2, axis=1)
-    final.to_csv(out_csv_name)
+        results = list(
+            map(
+                analyze_barcode_wrapper,
+                barcode_counter,
+                barcode_counter.values(),
+                repeat(indexes),
+            )
+        )
+
+    keys = results[0].keys()
+    with open(out_csv_name, "w", newline="") as output_file:
+        dict_writer = csv.DictWriter(output_file, keys)
+        dict_writer.writeheader()
+        dict_writer.writerows(results)
 
 
 if __name__ == "__main__":
