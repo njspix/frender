@@ -713,7 +713,14 @@ def frender_se(
         hops.to_csv(f"{out_dir}{preefix}barcode_hops.csv", index=False)
 
 
-def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix="", num_subs=1, out_csv_name):
+def frender_scan(
+    rc_mode,
+    barcode,
+    fastq_1,
+    cores,
+    num_subs,
+    out_csv_name,
+):
     """Scan a single fastq file, counting exact and inexact barcode matches, conflicting barcodes, index hops, and undetermined reads. No demultiplexing is performed.
 
     Inputs -
@@ -747,14 +754,6 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix="", num_subs=1,
         indexes = pd.read_csv(barcode, usecols=cols, index_col="AccessionID")
     else:
         indexes = pd.read_csv(barcode, header=None, names=cols, index_col="AccessionID")
-
-    # Create output directory and prep prefix
-    out_dir = out_dir.rstrip("/") + "/"  # Add trailing slash
-    if out_dir != "./":
-        Path(out_dir).mkdir(parents=True, exist_ok=True)
-
-    if preefix != "" and not preefix.endswith("_"):
-        preefix = preefix + "_"
 
     barcode_counter = {}
     record_count, new_count = 0, 0
@@ -819,8 +818,11 @@ def frender_scan(rc_mode, barcode, fastq_1, out_dir=".", preefix="", num_subs=1,
 
         return x
 
-    pandarallel.initialize()
-    final = barcode_counts.parallel_apply(test_function2, axis=1)
+    if cores > 1:
+        pandarallel.initialize(nb_workers=cores)
+        final = barcode_counts.parallel_apply(test_function2, axis=1)
+    else:
+        final = barcode_counts.apply(test_function2, axis=1)
     final.to_csv(out_csv_name)
 
 
@@ -873,6 +875,13 @@ if __name__ == "__main__":
         required=True,
     )
     parser.add_argument(
+        "--cores",
+        help="Number of cores to use for analysis, default = 1",
+        default=1,
+        type=int,
+        required=False,
+    )
+    parser.add_argument(
         "-s",
         "--scan",
         action="store_true",
@@ -912,9 +921,7 @@ if __name__ == "__main__":
             else "index 2 sequences as supplied"
         )
         print(f"Scanning {args.fastqs[0]} using {rc_mode_text}...", file=sys.stderr)
-        frender_scan(
-            args.rc, args.b, args.fastqs[0], args.o, args.p, args.numsubs, args.x
-        )
+        frender_scan(args.rc, args.b, args.fastqs[0], args.cores, args.numsubs, args.x)
 
     else:
         # single end case
