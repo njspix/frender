@@ -168,13 +168,29 @@ def frender_scan(
 
     Inputs -
         barcode - CSV file containing barcodes
-        fastq_1 - Read 1 FASTQ file
-        out_dir - Output directory name [default: '.']
-        preefix - Prefix to add to output files [default: '']
+        fastq - Read 1 FASTQ file
+        cores - number of cores to use when processing barcodes
         num_subs - number of substitutions allowed
+        rc_mode - consider reverse complement of index 2 in analysis?
+        out_csv_name - Output csv name
 
     Returns -
-        TODO: doc...
+        CSV file with the following columns:
+            idx1 - Index 1 in barcode
+            idx2 - Index 2 in barcode
+            reads - total number of reads associated with this pair of barcodes
+            matched_idx1 - if index 1 matches an index 1 in the supplied table, the first match is printed here
+            matched_idx2 - if index 2 matches an index 2 in the supplied table, the first match is printed here
+            read_type - one of:
+                - 'undetermined'
+                - 'index_hop' (exactly one match found for each index 1 and index 2, but the matched indexes are associated with different samples)
+                - 'ambiguous' (barcodes match more than one sample)
+                - 'demuxable' (barcodes match to one sample)
+            sample_name - if 'read_type' is 'demuxable', the sample name associated with this pair of indexes
+        If rc_mode is TRUE, the following columns are also included:
+            matched_rc_idx2 - if the reverse complment of index 2 matches an index 2 in the supplied table, the first match is printed here (in original, not reverse complemented, format)
+            rc_read_type - the read type found using the *reverse complement* of the supplied index 2
+            rc_sample_name - if 'rc_read_type' is 'demuxable', the sample name associated with index 1 and the *reverse complement* of the supplied index 2
     """
     # Not all data includes a header in barcodeAssociationTable.txt
     # Check for how to correctly load data
@@ -202,7 +218,7 @@ def frender_scan(
     record_count, new_count = 0, 0
     start = perf_counter()
 
-    with gzip.open(fastq_1, "rt") as read_file:
+    with gzip.open(fastq, "rt") as read_file:
         for read_head in islice(read_file, 0, None, 4):
             if record_count % counter_interval == 1:
                 end = perf_counter()
@@ -226,7 +242,6 @@ def frender_scan(
         f"\nScanning complete! Analyzing {len(barcode_counter)} barcodes...",
         file=sys.stderr,
     )
-    # Turn the barcode_counter dict into a pd dataframe
 
     if cores > 1:
         with Pool(processes=cores) as pool:
