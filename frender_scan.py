@@ -157,11 +157,11 @@ def analyze_barcode_wrapper(barcode, num_reads, indexes):
 
 
 def frender_scan(
-    rc_mode,
     barcode,
-    fastq_1,
+    fastq,
     cores,
     num_subs,
+    rc_mode,
     out_csv_name,
 ):
     """Scan a single fastq file, counting exact and inexact barcode matches, conflicting barcodes, index hops, and undetermined reads. No demultiplexing is performed.
@@ -258,94 +258,60 @@ if __name__ == "__main__":
         description="Demultiplex Undetermined FastQ files with given barcodes."
     )
     parser.add_argument(
-        "-o",
-        metavar="output_dir",
-        default=".",
-        help="output files directory [default: '.']",
+        ["-o", "--outfile"],
+        metavar="output_csv",
+        default="frender_scan_output.csv",
+        help="output csv file name",
     )
     parser.add_argument(
-        "-p",
-        metavar="file_prefix",
-        default="",
-        help="prefix added to output files [default: " "]",
-    )
-    parser.add_argument(
-        "-i",
-        metavar="index_hopped.fq",
-        default="",
-        help="output fastq for index hopped reads [default: " "]",
-    )
-    parser.add_argument(
-        "-c",
-        metavar="conflicting.fq",
-        default="",
-        help="output fastq for reads with conflicting barcodes [default: " "]",
-    )
-    parser.add_argument(
-        "-u",
-        metavar="undetermined.fq",
-        default="",
-        help="output fastq for remaining undetermined reads [default: " "]",
-    )
-    parser.add_argument(
-        "-b",
-        metavar="barcode.txt",
+        ["-b", "--barcode_table"],
+        metavar="barcodeAssociationTable.csv",
         help="Barcode association table, csv format",
         required=True,
     )
     parser.add_argument(
-        "-n",
-        "--numsubs",
+        ["-n", "--num_subs"],
         metavar="num_subs",
-        help="Number of substitutions allowed in barcode when matching",
+        help="Number of substitutions allowed in barcode when matching (default = 1)",
+        default=1,
         type=int,
         required=True,
     )
     parser.add_argument(
-        "--cores",
+        ["-c", "--cores"],
+        metavar="cores",
         help="Number of cores to use for analysis, default = 1",
         default=1,
         type=int,
-        required=False,
     )
     parser.add_argument(
-        "-s",
-        "--scan",
+        ["-rc", "--reverse_complement"],
         action="store_true",
-        help="""Scan a single fastq file, counting exact and inexact barcode matches, conflicting barcodes, index hops, and undetermined reads. 
-                No demultiplexing is performed. 
-                ****** 
-                Streams CSV formatted output (idx1, idx2, total_reads, matched_idx1, matched_idx2,read_type, sample_name, idx2_is_reverse_complement)
-                to stdout (make sure to redirect to a file!) 
-                ******
-             """,
+        metavar="reverse_complement",
+        help="Also scan for reverse complement of index 2 (to check for mistakes with e.g. HiSeq 4000 and other systems)",
     )
     parser.add_argument(
-        "-x",
-        help="output, csv format",
-        required=True,
-    )
-    parser.add_argument(
-        "-rc",
-        action="store_true",
-        help="When used with --scan, also scan for reverse complement of index 2 (to check for mistakes with e.g. HiSeq 4000 and other systems)",
-    )
-    parser.add_argument(
-        "fastqs",
-        nargs=argparse.REMAINDER,
-        help="""Gzipped fastq files to be scanned or demultiplexed. If -s is specified, only one fastq is used. 
-                  If -s is NOT specified, and one fastq is supplied, one set of fastqs will be produced (single-end mode)
-                  If -s is NOT specified, and two fastqs are supplied, two sets of fastqs will be produced (R1 and R2; paired-end mode)
-               """,
+        "fastq",
+        nargs=1,
+        help="Gzipped fastq file to be scanned. If analyzing paired-end data,only read 1 need be analyzed. ",
     )
 
     args = parser.parse_args()
 
-    if args.scan:
-        rc_mode_text = (
-            "both supplied and reverse-complement index 2 sequences"
-            if args.rc
-            else "index 2 sequences as supplied"
-        )
-        print(f"Scanning {args.fastqs[0]} using {rc_mode_text}...", file=sys.stderr)
-        frender_scan(args.rc, args.b, args.fastqs[0], args.cores, args.numsubs, args.x)
+    if not args.outfile.endswith(".csv"):
+        args.outfile = args.outfile + ".csv"
+
+    rc_mode_text = (
+        "both supplied and reverse-complement index 2 sequences"
+        if args.rc
+        else "index 2 sequences as supplied"
+    )
+    print(f"Scanning {args.fastq} using {rc_mode_text}...", file=sys.stderr)
+    frender_scan(
+        args.barcode_table,
+        args.fastq,
+        args.cores,
+        args.num_subs,
+        args.reverse_complement,
+        args.outfile,
+    )
