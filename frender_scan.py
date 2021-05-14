@@ -25,7 +25,6 @@ import csv
 import gzip
 from itertools import islice, repeat
 import sys
-from time import perf_counter
 from multiprocessing import Pool
 
 try:
@@ -66,11 +65,11 @@ def reverse_complement(string):
 
 
 def analyze_barcode(idx1, idx2, all_indexes, num_subs, rc_flag=False):
-    all_idx1 = all_indexes["Index1"].tolist()
+    all_idx1 = all_indexes["idx1"]
     all_idx2 = (
-        [reverse_complement(i) for i in all_indexes["Index2"].tolist()]
+        [reverse_complement(i) for i in all_indexes["idx2"]]
         if rc_flag
-        else all_indexes["Index2"].tolist()
+        else all_indexes["idx2"]
     )
 
     idx1_matches = fuz_match_list(idx1, all_idx1, num_subs)
@@ -89,7 +88,7 @@ def analyze_barcode(idx1, idx2, all_indexes, num_subs, rc_flag=False):
 
         elif len(match_isec) == 1:
             # this is a good read
-            sample_name = all_indexes.index[match_isec.pop()]
+            sample_name = all_indexes["id"][match_isec.pop()]
             read_type = "demuxable"
 
         else:
@@ -119,10 +118,10 @@ def analyze_barcode_wrapper(barcode, num_reads, indexes, num_subs, rc_mode):
     temp = analyze_barcode(idx1, idx2, indexes, num_subs)
 
     if rc_mode:
-        # then if matched_idx1 is not na, update only 'matched_rc_idx2', 'rc_read_type', 'rc_sample_name' for rc idx2
+        # then if matched_idx1 is not empty, update only 'matched_rc_idx2', 'rc_read_type', 'rc_sample_name' for rc idx2
         if not temp["matched_idx1"] == "":
-            test2 = analyze_barcode(idx1, idx2, indexes, num_subs, True)
-            final = {
+            rc_temp = analyze_barcode(idx1, idx2, indexes, num_subs, True)
+            return {
                 "idx1": idx1,
                 "idx2": idx2,
                 "reads": num_reads,
@@ -130,30 +129,36 @@ def analyze_barcode_wrapper(barcode, num_reads, indexes, num_subs, rc_mode):
                 "matched_idx2": temp["matched_idx2"],
                 "read_type": temp["read_type"],
                 "sample_name": temp["sample_name"],
-                "matched_rc_idx2": test2["matched_idx2"],
-                "rc_read_type": test2["read_type"],
-                "rc_sample_name": test2["sample_name"],
+                "matched_rc_idx2": rc_temp["matched_idx2"],
+                "rc_read_type": rc_temp["read_type"],
+                "rc_sample_name": rc_temp["sample_name"],
             }
-            return final
 
         # but otherwise, update 'matched_idx1', 'matched_rc_idx2', 'rc_read_type', 'rc_sample_name' for rc idx2
         else:
-            test2 = analyze_barcode(idx1, idx2, indexes, num_subs, True)
-            final = {
+            rc_temp = analyze_barcode(idx1, idx2, indexes, num_subs, True)
+            return {
                 "idx1": idx1,
                 "idx2": idx2,
                 "reads": num_reads,
-                "matched_idx1": test2["matched_idx1"],
+                "matched_idx1": rc_temp["matched_idx1"],
                 "matched_idx2": temp["matched_idx2"],
                 "read_type": temp["read_type"],
                 "sample_name": temp["sample_name"],
-                "matched_rc_idx2": test2["matched_idx2"],
-                "rc_read_type": test2["read_type"],
-                "rc_sample_name": test2["sample_name"],
+                "matched_rc_idx2": rc_temp["matched_idx2"],
+                "rc_read_type": rc_temp["read_type"],
+                "rc_sample_name": rc_temp["sample_name"],
             }
-        return final
     else:
-        return temp
+        return {
+            "idx1": idx1,
+            "idx2": idx2,
+            "reads": num_reads,
+            "matched_idx1": temp["matched_idx1"],
+            "matched_idx2": temp["matched_idx2"],
+            "read_type": temp["read_type"],
+            "sample_name": temp["sample_name"],
+        }
 
 
 def get_col(pattern, cols):
@@ -175,6 +180,10 @@ def get_indexes(barcode_assoc_table):
                 for column, value in row.items():
                     if column in interesting_cols:
                         all_indexes.setdefault(column, []).append(value)
+    all_indexes["id"] = all_indexes.pop(header[id_col])
+    all_indexes["idx1"] = all_indexes.pop(header[idx1_col])
+    all_indexes["idx2"] = all_indexes.pop(header[idx2_col])
+
     return all_indexes
 
 
@@ -228,7 +237,7 @@ def frender_scan(
                 barcode_counter[code] = 1
 
     print(
-        f"\nScanning complete! Analyzing {len(barcode_counter)} barcodes...",
+        f"Scanning complete! Analyzing {len(barcode_counter)} barcodes...",
         file=sys.stderr,
     )
 
@@ -314,20 +323,20 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if not args.outfile.endswith(".csv"):
-        args.outfile = args.outfile + ".csv"
+    if not args.o.endswith(".csv"):
+        args.o = args.o + ".csv"
 
     rc_mode_text = (
         "both supplied and reverse-complement index 2 sequences"
-        if args.rc
+        if args.reverse_complement
         else "index 2 sequences as supplied"
     )
-    print(f"Scanning {args.fastq} using {rc_mode_text}...", file=sys.stderr)
+    print(f"Scanning {args.i[0]} using {rc_mode_text}...", file=sys.stderr)
     frender_scan(
-        args.barcode_table,
-        args.fastq,
+        args.b,
+        args.i[0],
         args.cores,
-        args.num_subs,
+        args.n,
         args.reverse_complement,
-        args.outfile,
+        args.o,
     )
