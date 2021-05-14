@@ -270,42 +270,46 @@ if __name__ == "__main__":
         description="Demultiplex Undetermined FastQ files with given barcodes."
     )
     parser.add_argument(
-        ["-o", "--outfile"],
-        metavar="output_csv",
-        default="frender_scan_output.csv",
-        help="output csv file name",
+        "-i",
+        nargs=1,
+        help="Gzipped fastq file to be scanned. If analyzing paired-end data,only read 1 need be analyzed. ",
+        required=True,
+        metavar="input.fastq.gz",
     )
     parser.add_argument(
-        ["-b", "--barcode_table"],
-        metavar="barcodeAssociationTable.csv",
+        "-b",
         help="Barcode association table, csv format",
         required=True,
+        metavar="barcodeAssociationTable.csv",
     )
     parser.add_argument(
-        ["-n", "--num_subs"],
-        metavar="num_subs",
+        "-n",
         help="Number of substitutions allowed in barcode when matching (default = 1)",
         default=1,
         type=int,
         required=True,
+        metavar="num_subs",
     )
     parser.add_argument(
-        ["-c", "--cores"],
-        metavar="cores",
-        help="Number of cores to use for analysis, default = 1",
-        default=1,
-        type=int,
-    )
-    parser.add_argument(
-        ["-rc", "--reverse_complement"],
+        "-rc",
+        "--reverse_complement",
         action="store_true",
-        metavar="reverse_complement",
         help="Also scan for reverse complement of index 2 (to check for mistakes with e.g. HiSeq 4000 and other systems)",
     )
     parser.add_argument(
-        "fastq",
-        nargs=1,
-        help="Gzipped fastq file to be scanned. If analyzing paired-end data,only read 1 need be analyzed. ",
+        "-c",
+        "--cores",
+        help="Number of cores to use for analysis, default = 1",
+        default=1,
+        type=int,
+        metavar="cores",
+    )
+    parser.add_argument(
+        "-o",
+        default="frender_scan_output.csv",
+        help="output csv file name",
+        required=True,
+        metavar="output.csv",
     )
 
     args = parser.parse_args()
