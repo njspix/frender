@@ -21,14 +21,11 @@ OUTPUT/RETURNS:
 """
 
 import argparse
-from pathlib import Path
 import csv
-import pandas as pd
 import gzip
-from itertools import zip_longest, islice, repeat
+from itertools import islice, repeat
 import sys
 from time import perf_counter
-import numpy as np
 from multiprocessing import Pool
 
 try:
@@ -115,49 +112,74 @@ def analyze_barcode(idx1, idx2, all_indexes, num_subs, rc_flag=False):
     }
 
 
-def analyze_barcode_wrapper(barcode, num_reads, indexes):
+def analyze_barcode_wrapper(barcode, num_reads, indexes, num_subs, rc_mode):
     idx1, idx2 = barcode.split("+")
 
     # analyze barcode using supplied idx2
-    temp = analyze_barcode(idx1, idx2, indexes, 1)
+    temp = analyze_barcode(idx1, idx2, indexes, num_subs)
 
-    # then if matched_idx1 is not na, update only 'matched_rc_idx2', 'rc_read_type', 'rc_sample_name' for rc idx2
-    if not temp["matched_idx1"] == "":
-        test2 = analyze_barcode(idx1, idx2, indexes, 1, True)
-        final = {
-            "idx1": idx1,
-            "idx2": idx2,
-            "reads": num_reads,
-            "matched_idx1": temp["matched_idx1"],
-            "matched_idx2": temp["matched_idx2"],
-            "read_type": temp["read_type"],
-            "sample_name": temp["sample_name"],
-            "matched_rc_idx2": test2["matched_idx2"],
-            "rc_read_type": test2["read_type"],
-            "rc_sample_name": test2["sample_name"],
-        }
+    if rc_mode:
+        # then if matched_idx1 is not na, update only 'matched_rc_idx2', 'rc_read_type', 'rc_sample_name' for rc idx2
+        if not temp["matched_idx1"] == "":
+            test2 = analyze_barcode(idx1, idx2, indexes, num_subs, True)
+            final = {
+                "idx1": idx1,
+                "idx2": idx2,
+                "reads": num_reads,
+                "matched_idx1": temp["matched_idx1"],
+                "matched_idx2": temp["matched_idx2"],
+                "read_type": temp["read_type"],
+                "sample_name": temp["sample_name"],
+                "matched_rc_idx2": test2["matched_idx2"],
+                "rc_read_type": test2["read_type"],
+                "rc_sample_name": test2["sample_name"],
+            }
+            return final
+
+        # but otherwise, update 'matched_idx1', 'matched_rc_idx2', 'rc_read_type', 'rc_sample_name' for rc idx2
+        else:
+            test2 = analyze_barcode(idx1, idx2, indexes, num_subs, True)
+            final = {
+                "idx1": idx1,
+                "idx2": idx2,
+                "reads": num_reads,
+                "matched_idx1": test2["matched_idx1"],
+                "matched_idx2": temp["matched_idx2"],
+                "read_type": temp["read_type"],
+                "sample_name": temp["sample_name"],
+                "matched_rc_idx2": test2["matched_idx2"],
+                "rc_read_type": test2["read_type"],
+                "rc_sample_name": test2["sample_name"],
+            }
         return final
-
-    # but otherwise, update 'matched_idx1', 'matched_rc_idx2', 'rc_read_type', 'rc_sample_name' for rc idx2
     else:
-        test2 = analyze_barcode(idx1, idx2, indexes, 1, True)
-        final = {
-            "idx1": idx1,
-            "idx2": idx2,
-            "reads": num_reads,
-            "matched_idx1": test2["matched_idx1"],
-            "matched_idx2": temp["matched_idx2"],
-            "read_type": temp["read_type"],
-            "sample_name": temp["sample_name"],
-            "matched_rc_idx2": test2["matched_idx2"],
-            "rc_read_type": test2["read_type"],
-            "rc_sample_name": test2["sample_name"],
-        }
-        return final
+        return temp
+
+
+def get_col(pattern, cols):
+    a = [bool(regex.match(pattern, string, flags=regex.IGNORECASE)) for string in cols]
+    return [i for i, x in enumerate(a) if x][0]
+
+
+def get_indexes(barcode_assoc_table):
+    with open(barcode_assoc_table, newline="") as f:
+        header = next(csv.reader(f))
+        id_col = get_col(".*id.*", header)
+        idx1_col = get_col(".*index.*1.*", header)
+        idx2_col = get_col(".*index.*2.*", header)
+        interesting_cols = [header[id_col], header[idx1_col], header[idx2_col]]
+
+        all_indexes = {}
+        with open(barcode_assoc_table, newline="") as f:
+            for row in csv.DictReader(f):
+                for column, value in row.items():
+                    if column in interesting_cols:
+                        all_indexes.setdefault(column, []).append(value)
+    return all_indexes
 
 
 def frender_scan(
-    barcode,
+    barcode_assoc_table,
     fastq,
     cores,
     num_subs,
@@ -167,7 +189,7 @@ def frender_scan(
     """Scan a single fastq file, counting exact and inexact barcode matches, conflicting barcodes, index hops, and undetermined reads. No demultiplexing is performed.
 
     Inputs -
-        barcode - CSV file containing barcodes
+        barcode_assoc_table - CSV file containing barcodes
         fastq - Read 1 FASTQ file
         cores - number of cores to use when processing barcodes
         num_subs - number of substitutions allowed
@@ -192,51 +214,18 @@ def frender_scan(
             rc_read_type - the read type found using the *reverse complement* of the supplied index 2
             rc_sample_name - if 'rc_read_type' is 'demuxable', the sample name associated with index 1 and the *reverse complement* of the supplied index 2
     """
-    # Not all data includes a header in barcodeAssociationTable.txt
-    # Check for how to correctly load data
-    cols = ["AccessionID", "ClientAccessionID", "Index1", "Index2"]
-    test = pd.read_csv(barcode, nrows=1, header=None)
 
-    # As of 15 Sep 2020, early scWGBS data has four columns and newer data
-    # has seven columns. There is one dataset with three columns, and this
-    # is related to a collaborative project with human fetal DNA.
-    if len(test.columns) == 3:
-        print(
-            "WARNING: This barcode file only has 3 columns.", end=" ", file=sys.stderr
-        )
-        print("It likely is a single-indexed library", file=sys.stderr)
-        sys.exit(0)
-
-    # TODO: Handle single index
-    # TODO: Check barcodes are all the same length, match [ATCGatcg]
-    if test[0][0].startswith("Acc") or test[0][0].startswith("Client"):
-        indexes = pd.read_csv(barcode, usecols=cols, index_col="AccessionID")
-    else:
-        indexes = pd.read_csv(barcode, header=None, names=cols, index_col="AccessionID")
-
+    indexes = get_indexes(barcode_assoc_table)
     barcode_counter = {}
-    record_count, new_count = 0, 0
-    start = perf_counter()
 
     with gzip.open(fastq, "rt") as read_file:
         for read_head in islice(read_file, 0, None, 4):
-            if record_count % counter_interval == 1:
-                end = perf_counter()
-                print(
-                    f"Processed {record_count} reads in {round(end-start, 2)} sec, {round(counter_interval/(end-start),0)} reads/sec, {new_count} new barcodes found",
-                    file=sys.stderr,
-                    end="\r",
-                )
-                start, new_count = perf_counter(), 0
-
             code = read_head.rstrip("\n").split(" ")[1].split(":")[-1]
 
             try:
                 barcode_counter[code] += 1
             except KeyError:
                 barcode_counter[code] = 1
-                new_count += 1
-            record_count += 1
 
     print(
         f"\nScanning complete! Analyzing {len(barcode_counter)} barcodes...",
@@ -248,7 +237,13 @@ def frender_scan(
             print(f"multiprocessing with {cores} cores")
             results = pool.starmap(
                 analyze_barcode_wrapper,
-                zip(barcode_counter, barcode_counter.values(), repeat(indexes)),
+                zip(
+                    barcode_counter,
+                    barcode_counter.values(),
+                    repeat(indexes),
+                    repeat(num_subs),
+                    repeat(rc_mode),
+                ),
             )
 
     else:
@@ -258,6 +253,8 @@ def frender_scan(
                 barcode_counter,
                 barcode_counter.values(),
                 repeat(indexes),
+                repeat(num_subs),
+                repeat(rc_mode),
             )
         )
 
