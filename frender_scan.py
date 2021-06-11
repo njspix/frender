@@ -22,6 +22,8 @@ import gzip
 from itertools import islice, repeat
 from multiprocessing import Pool
 import re
+import os
+from math import floor
 
 
 def get_indexes_of_approx_matches(query, list_of_strings, hamming_dist):
@@ -208,9 +210,12 @@ def frender_scan(
 
     Inputs -
         barcode_assoc_table - CSV file containing barcodes
-        fastq - Read 1 FASTQ file
-        cores - number of cores to use when processing barcodes
-        num_subs - number of substitutions allowed
+        fastq - Read 1 FASTQ file (read 2, if present, should be identical, and is not used)
+        cores - number of cores to use when processing barcodes:
+            0: use all available cores (autodetect)
+            0 < cores < 1: use fraction of available cores, e.g. cores = 0.5 will use 4 cores on an 8-core system (autodetect)
+            cores >= 1: use this number of cores
+        num_subs - number of substitutions allowed when matching discovered barcodes against supplied indexes. Applied independently to each index
         rc_mode - consider reverse complement of index 2 in analysis?
         out_csv_name - Output csv name
 
@@ -227,16 +232,34 @@ def frender_scan(
                 - 'ambiguous' (barcodes match more than one sample)
                 - 'demuxable' (barcodes match to one sample)
             sample_name - if 'read_type' is 'demuxable', the sample name associated with this pair of indexes
-        If rc_mode is TRUE, the following columns are also included:
+        If rc_mode is True, the following columns are also included:
             matched_rc_idx2 - if the reverse complment of index 2 matches an index 2 in the supplied table, the first match is printed here (in original, not reverse complemented, format)
             rc_read_type - the read type found using the *reverse complement* of the supplied index 2
             rc_sample_name - if 'rc_read_type' is 'demuxable', the sample name associated with index 1 and the *reverse complement* of the supplied index 2
     """
 
+    # Calculate number of cores to use
+    assert cores >= 0, "Number of cores is negative... what does that mean?"
+    try:
+        avail_cores = len(os.sched_getaffinity(0))
+    except AttributeError:
+        avail_cores = os.cpu_count()
+
+    if cores == 0:
+        temp = avail_cores
+    elif cores > 0 & cores < 1:
+        temp = max(floor(cores * avail_cores), 1)
+    else:  # cores >= 1
+        temp = cores
+    cores = temp
+
+    # Count all barcodes found in fastq file
     barcode_counter = {}
     with gzip.open(fastq, "rt") as read_file:
         for read_head in islice(read_file, 0, None, 4):
-            code = read_head.rstrip("\n").split(" ")[1].split(":")[-1]
+            code = (
+                read_head.rstrip("\n").split(" ")[1].split(":")[-1]
+            )  # works for header format @EAS139:136:FC706VJ:2:2104:15343:197393 1:Y:18:AAAAAAAA+GGGGGGGG
             try:
                 barcode_counter[code] += 1
             except KeyError:
