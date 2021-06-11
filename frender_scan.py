@@ -34,7 +34,7 @@ except ModuleNotFoundError:
     sys.exit(0)
 
 
-def fuz_match_list(query, list_of_strings, hamming_dist):
+def get_indexes_of_approx_matches(query, list_of_strings, hamming_dist):
     """Returns a list containing *indexes* of matches to query in list_of_strings within hamming_dist.
     Since all strings must be the same length, hamming_dist is equivalent to the number of substitutions/differences between strings.
     Case insensitive.
@@ -57,19 +57,34 @@ def fuz_match_list(query, list_of_strings, hamming_dist):
 
 
 def reverse_complement(string):
-    return string.translate(str.maketrans("ATGCN", "TACGN"))[::-1]
+    return string.translate(str.maketrans("ATGCNatgcn", "TACGNtacgn"))[::-1]
 
 
-def analyze_barcode(idx1, idx2, all_indexes, num_subs, rc_flag=False):
-    all_idx1 = all_indexes["idx1"]
-    all_idx2 = (
-        [reverse_complement(i) for i in all_indexes["idx2"]]
-        if rc_flag
-        else all_indexes["idx2"]
-    )
+def analyze_barcode(idx1, idx2, all_idx1, all_idx2, all_ids, num_subs, rc_flag=False):
+    """Determine which sample a combination of indexes belongs to.
+    Inputs:
+        - idx1: the first barcode (read 1 index/barcode)
+        - idx2: the second barcode (read 2 index/barcode)
+        - all_indexes: dict of lists "idx1", "idx2", and "id", which contain, in the same order,
+            all index1s, index2s, and ids from the input csv.
+        - num_subs: number of substitutions to allow when matching fastq barcodes to barcodes in the input csv
+        rc_flag: if True, try to match using the reverse complement of index 2 as well as the sequence in the input csv
+    Returns:
+        A dict containing these entries:
+            - "matched_idx1": the first index 1 in the input csv that matched
+            - "matched_idx2": the first index 2 in the input csv that matched
+            - "read_type": one of:
+                - "index_hop": matches a supplied index1 and index2, but these matches are not associated with the same sample (e.g. maches index 1 for sample 'sample_x' and index 2 for sample 'sample_y')
+                - "demuxable": maches one supplied index1 and index2 - an uniquely assignable read
+                - "undetermined": no matches found for index1, index2, or both
+                - "ambiguous": could be assigned to more than one sample, e.g. index 1 and index 2 both match 'sample x' and 'sample y'
+            - "sample_name": if read_type is "demuxable", the associated sample id in the innput csv
+            - "rc_flag": was the computation done with the rc_flag True?
+    """
+    all_idx2 = [reverse_complement(i) for i in all_idx2] if rc_flag else all_idx2
 
-    idx1_matches = fuz_match_list(idx1, all_idx1, num_subs)
-    idx2_matches = fuz_match_list(idx2, all_idx2, num_subs)
+    idx1_matches = get_indexes_of_approx_matches(idx1, all_idx1, num_subs)
+    idx2_matches = get_indexes_of_approx_matches(idx2, all_idx2, num_subs)
 
     if bool(idx1_matches) and bool(idx2_matches):
         # Can find at least one barcode match for both indices
@@ -84,7 +99,7 @@ def analyze_barcode(idx1, idx2, all_indexes, num_subs, rc_flag=False):
 
         elif len(match_isec) == 1:
             # this is a good read
-            sample_name = all_indexes["id"][match_isec.pop()]
+            sample_name = all_ids[match_isec.pop()]
             read_type = "demuxable"
 
         else:
@@ -107,16 +122,20 @@ def analyze_barcode(idx1, idx2, all_indexes, num_subs, rc_flag=False):
     }
 
 
-def analyze_barcode_wrapper(barcode, num_reads, indexes, num_subs, rc_mode):
+def analyze_barcode_wrapper(
+    barcode, num_reads, all_idx1, all_idx2, all_ids, num_subs, rc_mode
+):
     idx1, idx2 = barcode.split("+")
 
     # analyze barcode using supplied idx2
-    temp = analyze_barcode(idx1, idx2, indexes, num_subs)
+    temp = analyze_barcode(idx1, idx2, all_idx1, all_idx2, all_ids, num_subs)
 
     if rc_mode:
         # then if matched_idx1 is not empty, update only 'matched_rc_idx2', 'rc_read_type', 'rc_sample_name' for rc idx2
         if not temp["matched_idx1"] == "":
-            rc_temp = analyze_barcode(idx1, idx2, indexes, num_subs, True)
+            rc_temp = analyze_barcode(
+                idx1, idx2, all_idx1, all_idx2, all_ids, num_subs, True
+            )
             return {
                 "idx1": idx1,
                 "idx2": idx2,
@@ -132,7 +151,9 @@ def analyze_barcode_wrapper(barcode, num_reads, indexes, num_subs, rc_mode):
 
         # but otherwise, update 'matched_idx1', 'matched_rc_idx2', 'rc_read_type', 'rc_sample_name' for rc idx2
         else:
-            rc_temp = analyze_barcode(idx1, idx2, indexes, num_subs, True)
+            rc_temp = analyze_barcode(
+                idx1, idx2, all_idx1, all_idx2, all_ids, num_subs, True
+            )
             return {
                 "idx1": idx1,
                 "idx2": idx2,
@@ -220,13 +241,10 @@ def frender_scan(
             rc_sample_name - if 'rc_read_type' is 'demuxable', the sample name associated with index 1 and the *reverse complement* of the supplied index 2
     """
 
-    indexes = get_indexes(barcode_assoc_table)
     barcode_counter = {}
-
     with gzip.open(fastq, "rt") as read_file:
         for read_head in islice(read_file, 0, None, 4):
             code = read_head.rstrip("\n").split(" ")[1].split(":")[-1]
-
             try:
                 barcode_counter[code] += 1
             except KeyError:
@@ -236,6 +254,11 @@ def frender_scan(
         f"Scanning complete! Analyzing {len(barcode_counter)} barcodes...",
     )
 
+    indexes = get_indexes(barcode_assoc_table)
+    all_idx1 = indexes["idx1"]
+    all_idx2 = indexes["idx2"]
+    all_ids = indexes["id"]
+
     if cores > 1:
         with Pool(processes=cores) as pool:
             print(f"multiprocessing with {cores} cores")
@@ -244,7 +267,9 @@ def frender_scan(
                 zip(
                     barcode_counter,
                     barcode_counter.values(),
-                    repeat(indexes),
+                    repeat(all_idx1),
+                    repeat(all_idx2),
+                    repeat(all_ids),
                     repeat(num_subs),
                     repeat(rc_mode),
                 ),
@@ -256,7 +281,9 @@ def frender_scan(
                 analyze_barcode_wrapper,
                 barcode_counter,
                 barcode_counter.values(),
-                repeat(indexes),
+                repeat(all_idx1),
+                repeat(all_idx2),
+                repeat(all_ids),
                 repeat(num_subs),
                 repeat(rc_mode),
             )
