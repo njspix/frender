@@ -21,3 +21,15 @@ Frender is designed to address these needs. Given a ```.fastq.gz``` file and a `
 3. Output a ```.csv``` file listing the assigned classification for each index combination, along with the number of reads with that index combination and other helpful information.
 
 ## Features
+
+* Multicore support for fast processing (~2.5 minutes for a 10 GB compressed fastq file, using 8 cores; most of this time is spent reading the gzip file.)
+* No dependencies (besides the Python3 standard libraries) allows for easy installation
+* Fuzzy matching: allow a specified number of mismatches when matching indexes found in the ```.fastq.gz``` file with those specified in the ```.csv``` file
+* Reverse complement mode: some Illumina machines (e.g. HiSeq 4000) read the reverse complement of Index 2 rather than the forward sequence (due to their chemistry). This can lead to confusion when demultiplexing. To address this, the ```-rc``` flag instructs Frender to try both the forward and reverse-complement sequence of each index 2.
+
+
+## Usage
+
+```./frender_scan.py --help``` provides a listing of the various options:
+
+
