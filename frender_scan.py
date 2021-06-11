@@ -128,54 +128,42 @@ def analyze_barcode_wrapper(
     idx1, idx2 = barcode.split("+")
 
     # analyze barcode using supplied idx2
-    temp = analyze_barcode(idx1, idx2, all_idx1, all_idx2, all_ids, num_subs)
+    temp = analyze_barcode(
+        idx1, idx2, all_idx1, all_idx2, all_ids, num_subs, rc_flag=False
+    )
+
+    result = {
+        "idx1": idx1,
+        "idx2": idx2,
+        "reads": num_reads,
+        "matched_idx1": temp["matched_idx1"],
+        "matched_idx2": temp["matched_idx2"],
+        "read_type": temp["read_type"],
+        "sample_name": temp["sample_name"],
+    }
 
     if rc_mode:
-        # then if matched_idx1 is not empty, update only 'matched_rc_idx2', 'rc_read_type', 'rc_sample_name' for rc idx2
-        if not temp["matched_idx1"] == "":
-            rc_temp = analyze_barcode(
-                idx1, idx2, all_idx1, all_idx2, all_ids, num_subs, True
-            )
-            return {
-                "idx1": idx1,
-                "idx2": idx2,
-                "reads": num_reads,
-                "matched_idx1": temp["matched_idx1"],
-                "matched_idx2": temp["matched_idx2"],
-                "read_type": temp["read_type"],
-                "sample_name": temp["sample_name"],
-                "matched_rc_idx2": rc_temp["matched_idx2"],
-                "rc_read_type": rc_temp["read_type"],
-                "rc_sample_name": rc_temp["sample_name"],
-            }
+        rc_temp = analyze_barcode(
+            idx1, idx2, all_idx1, all_idx2, all_ids, num_subs, True
+        )
 
-        # but otherwise, update 'matched_idx1', 'matched_rc_idx2', 'rc_read_type', 'rc_sample_name' for rc idx2
-        else:
-            rc_temp = analyze_barcode(
-                idx1, idx2, all_idx1, all_idx2, all_ids, num_subs, True
-            )
-            return {
-                "idx1": idx1,
-                "idx2": idx2,
-                "reads": num_reads,
-                "matched_idx1": rc_temp["matched_idx1"],
-                "matched_idx2": temp["matched_idx2"],
-                "read_type": temp["read_type"],
-                "sample_name": temp["sample_name"],
+        # if we already have a match for idx1, don't update it
+        idx1_match = (
+            rc_temp["matched_idx1"]
+            if temp["matched_idx1"] == ""
+            else temp["matched_idx1"]
+        )
+
+        result.update(
+            {
+                "matched_idx1": idx1_match,
                 "matched_rc_idx2": rc_temp["matched_idx2"],
                 "rc_read_type": rc_temp["read_type"],
                 "rc_sample_name": rc_temp["sample_name"],
             }
-    else:
-        return {
-            "idx1": idx1,
-            "idx2": idx2,
-            "reads": num_reads,
-            "matched_idx1": temp["matched_idx1"],
-            "matched_idx2": temp["matched_idx2"],
-            "read_type": temp["read_type"],
-            "sample_name": temp["sample_name"],
-        }
+        )
+
+    return result
 
 
 def get_col(pattern, cols):
