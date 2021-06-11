@@ -246,12 +246,11 @@ def frender_scan(
         avail_cores = os.cpu_count()
 
     if cores == 0:
-        temp = avail_cores
-    elif cores > 0 & cores < 1:
-        temp = max(floor(cores * avail_cores), 1)
+        cores = avail_cores
+    elif 0 < cores < 1:
+        cores = max(floor(cores * avail_cores), 1)
     else:  # cores >= 1
-        temp = cores
-    cores = temp
+        pass
 
     # Count all barcodes found in fastq file
     barcode_counter = {}
@@ -345,7 +344,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-c",
         "--cores",
-        help="Number of cores to use for analysis, default = 1",
+        help="Number of cores to use for analysis, default = 1. Use 0 for all available, or a number between 0 and 1 for a fraction of all available cores",
         default=1,
         type=int,
         metavar="cores",
