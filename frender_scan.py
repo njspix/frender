@@ -9,9 +9,6 @@ Creator:
 Date Created:
     May 2021
 
-Requires:
-    regex version
-
 Inputs:
     TODO: ADD DESCRIPTIONS OF INPUTS
 
@@ -23,15 +20,8 @@ import argparse
 import csv
 import gzip
 from itertools import islice, repeat
-import sys
 from multiprocessing import Pool
-
-try:
-    import regex
-except ModuleNotFoundError:
-    print("ERROR: Install regex module")
-    print("\tpip install regex\tOR\tconda install -c conda-forge regex")
-    sys.exit(0)
+import re
 
 
 def get_indexes_of_approx_matches(query, list_of_strings, hamming_dist):
@@ -125,7 +115,16 @@ def analyze_barcode(idx1, idx2, all_idx1, all_idx2, all_ids, num_subs, rc_flag=F
 def analyze_barcode_wrapper(
     barcode, num_reads, all_idx1, all_idx2, all_ids, num_subs, rc_mode
 ):
-    idx1, idx2 = barcode.split("+")
+    """Convenience function to call and format the output of analyze_barcode.
+    Inputs:
+        - barcode: extracted barcode from fastq header line (format [ACTG]+\+[ACTG]+)
+        - num_reads: number of reads with this barcode in fastq file
+        - all_idx1, all_idx2, all_ids: lists of index1/index2/sample ids from input csv file. Each list must be in the same order
+        - num_subs: number of substitutions allowed when matching barcode to supplied indexes
+        - rc_mode: if True, try to match using the reverse complement of index 2 as well as the sequence in the input csv
+
+    """
+    idx1, idx2 = barcode.split("+")[0:2]
 
     # analyze barcode using supplied idx2
     temp = analyze_barcode(
@@ -167,11 +166,16 @@ def analyze_barcode_wrapper(
 
 
 def get_col(pattern, cols):
-    a = [bool(regex.match(pattern, string, flags=regex.IGNORECASE)) for string in cols]
+    """Return the index of the first entry in cols matching pattern, case insensitive"""
+    a = [bool(re.match(pattern, string, flags=re.IGNORECASE)) for string in cols]
     return [i for i, x in enumerate(a) if x][0]
 
 
 def get_indexes(barcode_assoc_table):
+    """Get indexes and ids from a supplied csv file
+    Inputs: csv format file with columns matching ".*id.*", ".*index.*1.*", and ".*index.*2.*" (case insensitive)
+    Returns: dict of 3 lists (id, idx1, idx2) containing the values from their respective columns in the csv. Entries are in the same order.
+    """
     with open(barcode_assoc_table, newline="") as f:
         header = next(csv.reader(f))
         id_col = get_col(".*id.*", header)
