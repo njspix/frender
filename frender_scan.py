@@ -295,7 +295,7 @@ def frender_scan(
     if cores > 1:
         with Pool(processes=cores) as pool:
             print(f"multiprocessing with {cores} cores")
-            results = pool.starmap_async(
+            results = pool.starmap(
                 analyze_barcode_wrapper,
                 zip(
                     barcode_counter,

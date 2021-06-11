@@ -27,9 +27,61 @@ Frender is designed to address these needs. Given a ```.fastq.gz``` file and a `
 * Fuzzy matching: allow a specified number of mismatches when matching indexes found in the ```.fastq.gz``` file with those specified in the ```.csv``` file
 * Reverse complement mode: some Illumina machines (e.g. HiSeq 4000) read the reverse complement of Index 2 rather than the forward sequence (due to their chemistry). This can lead to confusion when demultiplexing. To address this, the ```-rc``` flag instructs Frender to try both the forward and reverse-complement sequence of each index 2.
 
+---
+
 
 ## Usage
 
-```./frender_scan.py --help``` provides a listing of the various options:
+#### Sample command:
+```python3 ./frender_scan.py -c 8 -n 1 -rc -b barcode_table.csv -f input.fastq.gz -o test.csv```
 
+Option|Explanation
+--|--
+-c 8 | process with 8 cpus
+-n 1 | allow 1 mismatch when trying to match indexes (applied separately to index 1 and index 2)
+-rc | consider the reverse complement as well as the forward sequence of index 2
+-b | barcode association table, ```.csv``` format
+-f | ```.fastq.gz``` input file
+-o | output file name
 
+#### More details:
+
+##### ```-c``` (cores):
+* ```1```: default, use one core
+* ```0```: autodetect number of available cpus
+* ```0.01 - 0.99```: use a fraction of available cpus, e.g. enter ```0.5``` to use half the available cpus
+
+##### ```-b``` (barcode association table):
+
+This file must be in comma-separated value format (although the ```.csv``` extension is unnecessary) and must contain a header row with column names similar to **'index1'**, **'index2'**, and **'id'** (case-insensitive regexes ```".*index.*1.*"```, ```".*index.*2.*"```, and ```".*id.*"``` are used to identify these columns). All barcodes must be the same length, which needs to match the length of the barcodes in the ```.fastq.gz``` file. 
+
+##### ```-o``` (output file):
+
+Frender produces a CSV file with the following columns:
+* idx1 - Index 1 in barcode
+* idx2 - Index 2 in barcode
+* reads - total number of reads associated with this pair of barcodes
+* matched_idx1 - if index 1 matches an index 1 in the supplied table, the first match is printed here
+* matched_idx2 - if index 2 matches an index 2 in the supplied table, the first match is printed here
+* read_type - one of:
+    - 'undetermined'
+    - 'index_hop' (exactly one match found for each index 1 and index 2, but the matched indexes are associated with different samples)
+    - 'ambiguous' (barcodes match more than one sample)
+    - 'demuxable' (barcodes match to one sample)
+* sample_name - if 'read_type' is 'demuxable', the sample name associated with this pair of indexes
+
+If rc_mode is True, the following columns are also included:
+* matched_rc_idx2 - if the reverse complment of index 2 matches an index 2 in the supplied table, the first match is printed here (in original, not reverse complemented, format)
+* rc_read_type - the read type found using the *reverse complement* of the supplied index 2
+* rc_sample_name - if 'rc_read_type' is 'demuxable', the sample name associated with index 1 and the *reverse complement* of the supplied index 2.
+
+Specifying an output file name is optional. If none is specified, the output will be named ```"frender-scan-results_{fastq_name}.csv"```
+
+---
+## Development
+
+I wrote this script partially to address our lab's specific needs and partially to develop my skillset. I do hope to add updates in the future (demultiplexing support, single index support, more options) but no guarantee!
+
+Thanks to @jamorrison for help with refactoring and polishing.
+
+This software is released under GPL v3 or later. 
