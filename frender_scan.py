@@ -1,7 +1,7 @@
 """
 Fastq REad Name DemultiplexER
 
-TODO: ADD ONE SENTENCE EXPLANATION
+Scans a fastq file and parses barcode names in the read headers, given known barcodes and sample ids.
 
 Creator:
     Nathan Spix
@@ -10,10 +10,29 @@ Date Created:
     May 2021
 
 Inputs:
-    TODO: ADD DESCRIPTIONS OF INPUTS
+    - input.fastq.gz: Gzipped fastq file to be scanned. If analyzing paired-end data,only read 1 need be analyzed.
+    - barcodeAssociationTable.csv: Barcode association table, csv format. Must include header with column names similar to 'index1', 'index2', and 'id'
+    - num_subs: number of substitutions to allow when trying to match barcodes
+    - rc: if set, also scan for reverse complement of index 2 (to check for mistakes with e.g. HiSeq 4000 and other systems)
+    - c: Number of cores to use for analysis, default = 1. Use 0 for all available, a number between 0 and 1 for a fraction of all available cores, or a number >=1 for a specified number of cores
 
 OUTPUT/RETURNS:
-    TODO: ADD DESCRIPTION OF OUTPUT FILES
+    CSV file with the following columns:
+        idx1 - Index 1 in barcode
+        idx2 - Index 2 in barcode
+        reads - total number of reads associated with this pair of barcodes
+        matched_idx1 - if index 1 matches an index 1 in the supplied table, the first match is printed here
+        matched_idx2 - if index 2 matches an index 2 in the supplied table, the first match is printed here
+        read_type - one of:
+            - 'undetermined'
+            - 'index_hop' (exactly one match found for each index 1 and index 2, but the matched indexes are associated with different samples)
+            - 'ambiguous' (barcodes match more than one sample)
+            - 'demuxable' (barcodes match to one sample)
+        sample_name - if 'read_type' is 'demuxable', the sample name associated with this pair of indexes
+    If rc_mode is True, the following columns are also included:
+        matched_rc_idx2 - if the reverse complment of index 2 matches an index 2 in the supplied table, the first match is printed here (in original, not reverse complemented, format)
+        rc_read_type - the read type found using the *reverse complement* of the supplied index 2
+        rc_sample_name - if 'rc_read_type' is 'demuxable', the sample name associated with index 1 and the *reverse complement* of the supplied index 2
 """
 
 import argparse
@@ -323,7 +342,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "-b",
-        help="Barcode association table, csv format",
+        help="Barcode association table, csv format. Must include header with column names similar to 'index1', 'index2', and 'id'",
         required=True,
         metavar="barcodeAssociationTable.csv",
     )
@@ -344,7 +363,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-c",
         "--cores",
-        help="Number of cores to use for analysis, default = 1. Use 0 for all available, or a number between 0 and 1 for a fraction of all available cores",
+        help="Number of cores to use for analysis, default = 1. Use 0 for all available, a number between 0 and 1 for a fraction of all available cores, or a number >= for a specified number of cores",
         default=1,
         type=float,
         metavar="cores",
