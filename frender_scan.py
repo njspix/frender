@@ -358,7 +358,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if not args.o:
-        args.o = "frender-scan-results_" + args.f + ".csv"
+        args.o = "frender-scan-results_" + os.path.basename(args.f[0]) + ".csv"
     if not args.o.endswith(".csv"):
         args.o = args.o + ".csv"
 
@@ -367,7 +367,7 @@ if __name__ == "__main__":
         if args.reverse_complement
         else "index 2 sequences as supplied"
     )
-    print(f"Scanning {args.i[0]} using {rc_mode_text}...")
+    print(f"Scanning {args.f[0]} using {rc_mode_text}...")
     frender_scan(
         args.b,
         args.f[0],
