@@ -10,8 +10,7 @@ Date Created:
     May 2021
 
 Requires:
-    package version
-    package version
+    regex version
 
 Inputs:
     TODO: ADD DESCRIPTIONS OF INPUTS
@@ -30,34 +29,31 @@ from multiprocessing import Pool
 try:
     import regex
 except ModuleNotFoundError:
-    print("ERROR: Install regex module", file=sys.stderr)
-    print(
-        "\tpip install regex\tOR\tconda install -c conda-forge regex", file=sys.stderr
-    )
+    print("ERROR: Install regex module")
+    print("\tpip install regex\tOR\tconda install -c conda-forge regex")
     sys.exit(0)
 
 
-def fuz_match_list(pattern, set_of_strings, num_subs):
-    """Given a query string and a list of strings, return a list of indices
-       where a match (+/- allowed substitutions) is found
-
-    Inputs -
-        pattern        - pattern to search for
-        set_of_strings - strings to search for pattern in
-        num_subs       - number of substitutions to allow
-    Returns -
-        list of where matches (with +/- allowed substitutions) occur in set_of_strings
+def fuz_match_list(query, list_of_strings, hamming_dist):
+    """Returns a list containing *indexes* of matches to query in list_of_strings within hamming_dist.
+    Since all strings must be the same length, hamming_dist is equivalent to the number of substitutions/differences between strings.
+    Case insensitive.
     """
-    if set_of_strings == []:
+    if list_of_strings == []:
         return []
 
     else:
-        pattern = regex.compile(
-            "(?:" + pattern + "){s<=" + str(num_subs) + "}", regex.IGNORECASE
-        )
-        matches = [bool(regex.match(pattern, string)) for string in set_of_strings]
-
-        return [i for i, val in enumerate(matches) if val]
+        result = []
+        for i in range(len(list_of_strings)):
+            str1, str2 = query.lower(), list_of_strings[i].lower()
+            assert len(str1) == len(
+                str2
+            ), f"Barcode {str1} doesn't match length of supplied barcode {str2}"
+            if len([0 for a, b in zip(str1, str2) if a != b]) <= hamming_dist:
+                result += [i]
+            else:
+                pass
+        return result
 
 
 def reverse_complement(string):
@@ -238,7 +234,6 @@ def frender_scan(
 
     print(
         f"Scanning complete! Analyzing {len(barcode_counter)} barcodes...",
-        file=sys.stderr,
     )
 
     if cores > 1:
@@ -331,7 +326,7 @@ if __name__ == "__main__":
         if args.reverse_complement
         else "index 2 sequences as supplied"
     )
-    print(f"Scanning {args.i[0]} using {rc_mode_text}...", file=sys.stderr)
+    print(f"Scanning {args.i[0]} using {rc_mode_text}...")
     frender_scan(
         args.b,
         args.i[0],
