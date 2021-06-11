@@ -315,7 +315,7 @@ if __name__ == "__main__":
         description="Demultiplex Undetermined FastQ files with given barcodes."
     )
     parser.add_argument(
-        "-i",
+        "-f",
         nargs=1,
         help="Gzipped fastq file to be scanned. If analyzing paired-end data,only read 1 need be analyzed. ",
         required=True,
@@ -351,14 +351,14 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "-o",
-        default="frender_scan_output.csv",
         help="output csv file name",
-        required=True,
         metavar="output.csv",
     )
 
     args = parser.parse_args()
 
+    if not args.o:
+        args.o = "frender-scan-results_" + args.f + ".csv"
     if not args.o.endswith(".csv"):
         args.o = args.o + ".csv"
 
@@ -370,7 +370,7 @@ if __name__ == "__main__":
     print(f"Scanning {args.i[0]} using {rc_mode_text}...")
     frender_scan(
         args.b,
-        args.i[0],
+        args.f[0],
         args.cores,
         args.n,
         args.reverse_complement,
