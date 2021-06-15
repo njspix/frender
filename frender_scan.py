@@ -183,6 +183,23 @@ def analyze_barcode_wrapper(
             }
         )
 
+        # in some cases, both forward index 2 and reverse complement index 2 could result in a valid demux call.
+        # Test for this, and re-call as 'ambiguous' if this is the case.
+        if (temp["read_type"] == "demuxable") & (rc_temp["read_type"] == "demuxable"):
+            if (
+                temp["sample_name"] == rc_temp["sample_name"]
+            ):  # palindromic index 2, this is unusual but possible...
+                pass
+            else:  # This barcode is actually ambiguous:
+                result.update(
+                    {
+                        "read_type": "ambiguous",
+                        "sample_name": "",
+                        "rc_read_type": "ambiguous",
+                        "rc_sample_name": "",
+                    }
+                )
+
     return result
 
 
