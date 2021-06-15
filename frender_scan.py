@@ -13,7 +13,7 @@ Inputs:
     - input.fastq.gz: Gzipped fastq file to be scanned. If analyzing paired-end data,only read 1 need be analyzed.
     - barcodeAssociationTable.csv: Barcode association table, csv format. Must include header with column names similar to 'index1', 'index2', and 'id'
     - num_subs: number of substitutions to allow when trying to match barcodes
-    - rc: if set, also scan for reverse complement of index 2 (to check for mistakes with e.g. HiSeq 4000 and other systems)
+    - rc: if set, also scan for reverse complement of index 2 (to check for mistakes with e.g. HiSeq 4000 and other systems). For each supplied id, frender will determine whether more reads can be demultiplexed using the forward (supplied) sequence or the reverse complement sequence. Barcodes will then be re-processed accordingly.
     - c: Number of cores to use for analysis, default = 1. Use 0 for all available, a number between 0 and 1 for a fraction of all available cores, or a number >=1 for a specified number of cores
 
 OUTPUT/RETURNS:
@@ -29,10 +29,6 @@ OUTPUT/RETURNS:
             - 'ambiguous' (barcodes match more than one sample)
             - 'demuxable' (barcodes match to one sample)
         sample_name - if 'read_type' is 'demuxable', the sample name associated with this pair of indexes
-    If rc_mode is True, the following columns are also included:
-        matched_rc_idx2 - if the reverse complment of index 2 matches an index 2 in the supplied table, the first match is printed here (in original, not reverse complemented, format)
-        rc_read_type - the read type found using the *reverse complement* of the supplied index 2
-        rc_sample_name - if 'rc_read_type' is 'demuxable', the sample name associated with index 1 and the *reverse complement* of the supplied index 2
 """
 
 
@@ -68,7 +64,7 @@ def reverse_complement(string):
     return string.translate(str.maketrans("ATGCNatgcn", "TACGNtacgn"))[::-1]
 
 
-def analyze_barcode(idx1, idx2, all_idx1, all_idx2, all_ids, num_subs, rc_flag=False):
+def analyze_barcode(idx1, idx2, all_idx1, all_idx2, all_ids, num_subs):
     """Determine which sample a combination of indexes belongs to.
     Inputs:
         - idx1: the first barcode (read 1 index/barcode)
@@ -76,7 +72,6 @@ def analyze_barcode(idx1, idx2, all_idx1, all_idx2, all_ids, num_subs, rc_flag=F
         - all_indexes: dict of lists "idx1", "idx2", and "id", which contain, in the same order,
             all index1s, index2s, and ids from the input csv.
         - num_subs: number of substitutions to allow when matching fastq barcodes to barcodes in the input csv
-        rc_flag: if True, try to match using the reverse complement of index 2 as well as the sequence in the input csv
     Returns:
         A dict containing these entries:
             - "matched_idx1": the first index 1 in the input csv that matched
@@ -86,11 +81,8 @@ def analyze_barcode(idx1, idx2, all_idx1, all_idx2, all_ids, num_subs, rc_flag=F
                 - "demuxable": maches one supplied index1 and index2 - an uniquely assignable read
                 - "undetermined": no matches found for index1, index2, or both
                 - "ambiguous": could be assigned to more than one sample, e.g. index 1 and index 2 both match 'sample x' and 'sample y'
-            - "sample_name": if read_type is "demuxable", the associated sample id in the innput csv
-            - "rc_flag": was the computation done with the rc_flag True?
+            - "sample_name": if read_type is "demuxable", the associated sample id in the input csv
     """
-    all_idx2 = [reverse_complement(i) for i in all_idx2] if rc_flag else all_idx2
-
     idx1_matches = get_indexes_of_approx_matches(idx1, all_idx1, num_subs)
     idx2_matches = get_indexes_of_approx_matches(idx2, all_idx2, num_subs)
 
@@ -126,11 +118,10 @@ def analyze_barcode(idx1, idx2, all_idx1, all_idx2, all_ids, num_subs, rc_flag=F
         "matched_idx2": matched_idx2,
         "read_type": read_type,
         "sample_name": sample_name,
-        "rc_flag": rc_flag,
     }
 
 
-def analyze_barcode_wrapper(
+def analyze_barcodes_with_rc(
     barcode, num_reads, all_idx1, all_idx2, all_ids, num_subs, rc_mode
 ):
     """Convenience function to call and format the output of analyze_barcode.
@@ -145,9 +136,7 @@ def analyze_barcode_wrapper(
     idx1, idx2 = barcode.split("+")[0:2]
 
     # analyze barcode using supplied idx2
-    temp = analyze_barcode(
-        idx1, idx2, all_idx1, all_idx2, all_ids, num_subs, rc_flag=False
-    )
+    temp = analyze_barcode(idx1, idx2, all_idx1, all_idx2, all_ids, num_subs)
 
     result = {
         "idx1": idx1,
@@ -160,9 +149,8 @@ def analyze_barcode_wrapper(
     }
 
     if rc_mode:
-        rc_temp = analyze_barcode(
-            idx1, idx2, all_idx1, all_idx2, all_ids, num_subs, True
-        )
+        rc_all_idx2 = [reverse_complement(i) for i in all_idx2]
+        rc_temp = analyze_barcode(idx1, idx2, all_idx1, rc_all_idx2, all_ids, num_subs)
 
         # if we already have a match for idx1, don't update it
         idx1_match = (
@@ -230,7 +218,7 @@ def get_indexes(barcode_assoc_table):
 
     return all_indexes
 
-  
+
 def rc_mode_test(results_list):
     """Test if a list produced by read_scan_results includes reverse complement data"""
     return "rc_read_type" in results_list[0].keys()
@@ -358,7 +346,7 @@ def frender_scan(
         with Pool(processes=cores) as pool:
             print(f"Multiprocessing with {cores} cores")
             results = pool.starmap(
-                analyze_barcode_wrapper,
+                analyze_barcodes_with_rc,
                 zip(
                     barcode_counter,
                     barcode_counter.values(),
@@ -373,7 +361,7 @@ def frender_scan(
     else:
         results = list(
             map(
-                analyze_barcode_wrapper,
+                analyze_barcodes_with_rc,
                 barcode_counter,
                 barcode_counter.values(),
                 repeat(all_idx1),
@@ -458,7 +446,7 @@ def frender_scan(
             with Pool(processes=cores) as pool:
                 print(f"Multiprocessing with {cores} cores")
                 results = pool.starmap(
-                    analyze_barcode_wrapper,
+                    analyze_barcodes_with_rc,
                     zip(
                         barcode_counter,
                         barcode_counter.values(),
@@ -473,7 +461,7 @@ def frender_scan(
         else:
             results = list(
                 map(
-                    analyze_barcode_wrapper,
+                    analyze_barcodes_with_rc,
                     barcode_counter,
                     barcode_counter.values(),
                     repeat(all_idx1),
