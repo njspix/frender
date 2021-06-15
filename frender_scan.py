@@ -35,13 +35,10 @@ OUTPUT/RETURNS:
         rc_sample_name - if 'rc_read_type' is 'demuxable', the sample name associated with index 1 and the *reverse complement* of the supplied index 2
 """
 
-import argparse
-import csv
-import gzip
-from itertools import islice, repeat
+
+import os, argparse, re, csv, gzip
+from itertools import islice, repeat, zip_longest
 from multiprocessing import Pool
-import re
-import os
 from math import floor
 
 
@@ -233,7 +230,7 @@ def get_indexes(barcode_assoc_table):
 
     return all_indexes
 
-
+  
 def rc_mode_test(results_list):
     """Test if a list produced by read_scan_results includes reverse complement data"""
     return "rc_read_type" in results_list[0].keys()
@@ -499,19 +496,6 @@ if __name__ == "__main__":
         description="Demultiplex Undetermined FastQ files with given barcodes."
     )
     parser.add_argument(
-        "-f",
-        nargs=1,
-        help="Gzipped fastq file to be scanned. If analyzing paired-end data,only read 1 need be analyzed. ",
-        required=True,
-        metavar="input.fastq.gz",
-    )
-    parser.add_argument(
-        "-b",
-        help="Barcode association table, csv format. Must include header with column names similar to 'index1', 'index2', and 'id'",
-        required=True,
-        metavar="barcodeAssociationTable.csv",
-    )
-    parser.add_argument(
         "-n",
         help="Number of substitutions allowed in barcode when matching (default = 1)",
         default=1,
@@ -523,7 +507,7 @@ if __name__ == "__main__":
         "-rc",
         "--reverse_complement",
         action="store_true",
-        help="Also scan for reverse complement of index 2 (to check for mistakes with e.g. HiSeq 4000 and other systems)",
+        help="In scan mode: scan for reverse complement of index 2 (to check for mistakes with e.g. HiSeq 4000 and other systems). In demultiplex mode, allow demultiplexing with reverse complement. ",
     )
     parser.add_argument(
         "-c",
@@ -538,9 +522,56 @@ if __name__ == "__main__":
         help="output csv file name",
         metavar="output.csv",
     )
+    parser.add_argument(
+        "-d",
+        action="store_true",
+        help="Demultiplex: write out reads to their assigned fastq files",
+    )
+    parser.add_argument(
+        "-i",
+        action="store_true",
+        help="if -d is specified, also output fastq files with index-hopped reads",
+    )
+    parser.add_argument(
+        "-a",
+        action="store_true",
+        help="if -d is specified, also output fastq files with ambiguous reads",
+    )
+    parser.add_argument(
+        "-b",
+        help="Barcode association table, csv format. Must include header with column names similar to 'index1', 'index2', and 'id'. Alternatively, you may provide a frender-formatted csv file as input when running in demultiplex mode.",
+        required=True,
+        metavar="barcodeAssociationTable.csv",
+    )
+    parser.add_argument(
+        "-f",
+        nargs=argparse.REMAINDER,
+        help="Gzipped fastq file(s) to be scanned. If analyzing paired-end data, only one file will be used. If demultiplexing is performed (-d flag), both read 1 and read 2 files must be provided.",
+        required=True,
+        metavar="input.fastq.gz",
+    )
 
     args = parser.parse_args()
 
+    # Check proper specification of -d flag and csv file
+    if check_frender_csv(args.b) & (not args.d):
+        raise SystemExit(
+            "It looks like the supplied csv was produced by frender. Did you forget to specify -d (demultiplex mode)?"
+        )
+    if args.d & (not check_frender_csv(args.b)):
+        raise SystemExit(
+            "-d (demultiplex mode) is specified but the csv supplied doesn't look like a frender result csv!"
+        )
+
+    if args.d:
+        assert (
+            len(args.f) == 2
+        ), f"Exactly 2 input fastqs must be specified (found {len(args.f)})"
+
+        print("Writing demultiplexed files...")
+        frender_demux(args.f, read_scan_results(args.b), args.i, args.a, args.rc)
+
+    # Provide a default output file name
     if not args.o:
         args.o = "frender-scan-results_" + os.path.basename(args.f[0]) + ".csv"
     if not args.o.endswith(".csv"):
