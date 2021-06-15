@@ -76,7 +76,7 @@ def get_indexes(barcode_assoc_table):
 
 
 def get_ids(results_list):
-    """Get all sample ids from a list of dicts (same format as generated in frender_scan function)"""
+    """Get all sample ids from a list of dicts (format generated in frender_scan function)"""
 
     # Test whether we're using an rc_mode result list
     rc_mode = "rc_read_type" in results_list[0].keys()
@@ -92,8 +92,25 @@ def get_ids(results_list):
     return ids
 
 
+def check_frender_csv(csv_file):
+    """Check if csv file is likely to be frender output. Returns True or False."""
+    with open(csv_file, newline="") as f:
+        header = next(csv.reader(f))
+
+    return header[0:7] == [
+        "idx1",
+        "idx2",
+        "reads",
+        "matched_idx1",
+        "matched_idx2",
+        "read_type",
+        "sample_name",
+    ]
+
+
 def call_rc_mode_per_id(results_list):
-    """Given a list of dicts (same format as generated in frender_scan_function), for each sample id found, determine whether it should be demuxed with the forward or reverse complement index 2.
+    """Given a list of dicts (format generated in frender_scan_function), for each sample id found, determine whether it should be demuxed with the forward or reverse complement index 2.
+    The 'forward' (supplied) index 2 sequence is preferred if it results in an equal or greater number of demuxable reads compared to the reverse compelement index 2 sequence.
     Returns: a dictionary with each sample id and True (demux with rc index 2) or False (demux with forward index 2)
     """
 
@@ -123,6 +140,7 @@ def get_indexes_of_approx_matches(query, list_of_strings, hamming_dist):
     """Returns a list containing *indexes* of matches to query in list_of_strings within hamming_dist.
     Since all strings must be the same length, hamming_dist is equivalent to the number of substitutions/differences between strings.
     Case insensitive.
+    **This function does the heavy lifting for barcode analysis**
     """
     if list_of_strings == []:
         return []
