@@ -13,7 +13,9 @@ Inputs:
     - input.fastq.gz: Gzipped fastq file to be scanned. If analyzing paired-end data,only read 1 need be analyzed.
     - barcodeAssociationTable.csv: Barcode association table, csv format. Must include header with column names similar to 'index1', 'index2', and 'id'
     - num_subs: number of substitutions to allow when trying to match barcodes
-    - rc: if set, also scan for reverse complement of index 2 (to check for mistakes with e.g. HiSeq 4000 and other systems). For each supplied id, frender will determine whether more reads can be demultiplexed using the forward (supplied) sequence or the reverse complement sequence. Barcodes will then be re-processed accordingly.
+    - rc: if set, also scan for reverse complement of index 2 (to check for mistakes with e.g. HiSeq 4000 and other systems).
+        For each supplied id, frender will determine whether more reads can be demultiplexed using the forward (supplied) sequence or the reverse complement sequence.
+        Barcodes will then be re-processed accordingly.
     - c: Number of cores to use for analysis, default = 1. Use 0 for all available, a number between 0 and 1 for a fraction of all available cores, or a number >=1 for a specified number of cores
 
 OUTPUT/RETURNS:
@@ -38,6 +40,85 @@ from multiprocessing import Pool
 from math import floor
 
 
+def reverse_complement(string):
+    return string.translate(str.maketrans("ATGCNatgcn", "TACGNtacgn"))[::-1]
+
+
+def get_col(pattern, cols):
+    """Return the index of the first entry in cols matching pattern, case insensitive"""
+    a = [bool(re.match(pattern, string, flags=re.IGNORECASE)) for string in cols]
+    return [i for i, x in enumerate(a) if x][0]
+
+
+def get_indexes(barcode_assoc_table):
+    """Get indexes and ids from a supplied csv file
+    Inputs: csv format file with columns matching ".*id.*", ".*index.*1.*", and ".*index.*2.*" (case insensitive)
+    Returns: dict of 3 lists (id, idx1, idx2) containing the values from their respective columns in the csv. Entries are in the same order.
+    """
+    with open(barcode_assoc_table, newline="") as f:
+        header = next(csv.reader(f))
+        id_col = get_col(".*id.*", header)
+        idx1_col = get_col(".*index.*1.*", header)
+        idx2_col = get_col(".*index.*2.*", header)
+        interesting_cols = [header[id_col], header[idx1_col], header[idx2_col]]
+
+        all_indexes = {}
+        with open(barcode_assoc_table, newline="") as f:
+            for row in csv.DictReader(f):
+                for column, value in row.items():
+                    if column in interesting_cols:
+                        all_indexes.setdefault(column, []).append(value)
+    all_indexes["id"] = all_indexes.pop(header[id_col])
+    all_indexes["idx1"] = all_indexes.pop(header[idx1_col])
+    all_indexes["idx2"] = all_indexes.pop(header[idx2_col])
+
+    return all_indexes
+
+
+def get_ids(results_list):
+    """Get all sample ids from a list of dicts (same format as generated in frender_scan function)"""
+
+    # Test whether we're using an rc_mode result list
+    rc_mode = "rc_read_type" in results_list[0].keys()
+
+    ids = []
+
+    for entry in results_list:
+        if rc_mode:
+            if (entry["rc_sample_name"] != "") & (entry["rc_sample_name"] not in ids):
+                ids += [entry["rc_sample_name"]]
+        if (entry["sample_name"] != "") & (entry["sample_name"] not in ids):
+            ids += [entry["sample_name"]]
+    return ids
+
+
+def call_rc_mode_per_id(results_list):
+    """Given a list of dicts (same format as generated in frender_scan_function), for each sample id found, determine whether it should be demuxed with the forward or reverse complement index 2.
+    Returns: a dictionary with each sample id and True (demux with rc index 2) or False (demux with forward index 2)
+    """
+
+    # Must have RC entries
+    assert (
+        "rc_read_type" in results_list[0].keys()
+    ), "It looks like this frender result csv was not generated with the -rc flag. Either specify a different result csv, or run this command without setting the -rc flag."
+
+    ids = {id: {"f": 0, "rc": 0, "demux_with_rc": ""} for id in get_ids(results_list)}
+
+    for record in results_list:
+        if record["sample_name"] != "":
+            ids[record["sample_name"]]["f"] += int(record["reads"])
+        if record["rc_sample_name"] != "":
+            ids[record["rc_sample_name"]]["rc"] += int(record["reads"])
+
+    for each in ids:
+        if ids[each]["f"] >= ids[each]["rc"]:
+            ids[each]["demux_with_rc"] = False
+        else:
+            ids[each]["demux_with_rc"] = True
+
+    return {a: ids[a]["demux_with_rc"] for a in ids}
+
+
 def get_indexes_of_approx_matches(query, list_of_strings, hamming_dist):
     """Returns a list containing *indexes* of matches to query in list_of_strings within hamming_dist.
     Since all strings must be the same length, hamming_dist is equivalent to the number of substitutions/differences between strings.
@@ -58,10 +139,6 @@ def get_indexes_of_approx_matches(query, list_of_strings, hamming_dist):
             else:
                 pass
         return result
-
-
-def reverse_complement(string):
-    return string.translate(str.maketrans("ATGCNatgcn", "TACGNtacgn"))[::-1]
 
 
 def analyze_barcode(idx1, idx2, all_idx1, all_idx2, all_ids, num_subs):
@@ -124,7 +201,7 @@ def analyze_barcode(idx1, idx2, all_idx1, all_idx2, all_ids, num_subs):
 def analyze_barcodes_with_rc(
     barcode, num_reads, all_idx1, all_idx2, all_ids, num_subs, rc_mode
 ):
-    """Convenience function to call and format the output of analyze_barcode.
+    """Wrapper function to call analyze barcode. Handles special cases with rc_mode flag
     Inputs:
         - barcode: extracted barcode from fastq header line (format [ACTG]+\+[ACTG]+)
         - num_reads: number of reads with this barcode in fastq file
@@ -186,85 +263,6 @@ def analyze_barcodes_with_rc(
                 )
 
     return result
-
-
-def get_col(pattern, cols):
-    """Return the index of the first entry in cols matching pattern, case insensitive"""
-    a = [bool(re.match(pattern, string, flags=re.IGNORECASE)) for string in cols]
-    return [i for i, x in enumerate(a) if x][0]
-
-
-def get_indexes(barcode_assoc_table):
-    """Get indexes and ids from a supplied csv file
-    Inputs: csv format file with columns matching ".*id.*", ".*index.*1.*", and ".*index.*2.*" (case insensitive)
-    Returns: dict of 3 lists (id, idx1, idx2) containing the values from their respective columns in the csv. Entries are in the same order.
-    """
-    with open(barcode_assoc_table, newline="") as f:
-        header = next(csv.reader(f))
-        id_col = get_col(".*id.*", header)
-        idx1_col = get_col(".*index.*1.*", header)
-        idx2_col = get_col(".*index.*2.*", header)
-        interesting_cols = [header[id_col], header[idx1_col], header[idx2_col]]
-
-        all_indexes = {}
-        with open(barcode_assoc_table, newline="") as f:
-            for row in csv.DictReader(f):
-                for column, value in row.items():
-                    if column in interesting_cols:
-                        all_indexes.setdefault(column, []).append(value)
-    all_indexes["id"] = all_indexes.pop(header[id_col])
-    all_indexes["idx1"] = all_indexes.pop(header[idx1_col])
-    all_indexes["idx2"] = all_indexes.pop(header[idx2_col])
-
-    return all_indexes
-
-
-def rc_mode_test(results_list):
-    """Test if a list produced by read_scan_results includes reverse complement data"""
-    return "rc_read_type" in results_list[0].keys()
-
-
-def get_ids(results_list):
-    """Get all sample ids from a list of dicts (same format as generated in frender_scan function)"""
-
-    rc_mode = rc_mode_test(results_list)
-
-    ids = []
-
-    for entry in results_list:
-        if rc_mode:
-            if (entry["rc_sample_name"] != "") & (entry["rc_sample_name"] not in ids):
-                ids += [entry["rc_sample_name"]]
-        if (entry["sample_name"] != "") & (entry["sample_name"] not in ids):
-            ids += [entry["sample_name"]]
-    return ids
-
-
-def call_rc_mode_per_id(results_list):
-    """Given a list of dicts (same format as generated in frender_scan_function), for each sample id found, determine whether it should be demuxed with the forward or reverse complement index 2.
-    Returns: a dictionary with each sample id and True (demux with rc index 2) or False (demux with forward index 2)
-    """
-
-    # Must have RC entries
-    assert rc_mode_test(
-        results_list
-    ), "It looks like this frender result csv was not generated with the -rc flag. Either specify a different result csv, or run this command without setting the -rc flag."
-
-    ids = {id: {"f": 0, "rc": 0, "demux_with_rc": ""} for id in get_ids(results_list)}
-
-    for record in results_list:
-        if record["sample_name"] != "":
-            ids[record["sample_name"]]["f"] += int(record["reads"])
-        if record["rc_sample_name"] != "":
-            ids[record["rc_sample_name"]]["rc"] += int(record["reads"])
-
-    for each in ids:
-        if ids[each]["f"] >= ids[each]["rc"]:
-            ids[each]["demux_with_rc"] = False
-        else:
-            ids[each]["demux_with_rc"] = True
-
-    return {a: ids[a]["demux_with_rc"] for a in ids}
 
 
 def frender_scan(
