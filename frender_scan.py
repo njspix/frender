@@ -234,6 +234,54 @@ def get_indexes(barcode_assoc_table):
     return all_indexes
 
 
+def rc_mode_test(results_list):
+    """Test if a list produced by read_scan_results includes reverse complement data"""
+    return "rc_read_type" in results_list[0].keys()
+
+
+def get_ids(results_list):
+    """Get all sample ids from a list of dicts (same format as generated in frender_scan function)"""
+
+    rc_mode = rc_mode_test(results_list)
+
+    ids = []
+
+    for entry in results_list:
+        if rc_mode:
+            if (entry["rc_sample_name"] != "") & (entry["rc_sample_name"] not in ids):
+                ids += [entry["rc_sample_name"]]
+        if (entry["sample_name"] != "") & (entry["sample_name"] not in ids):
+            ids += [entry["sample_name"]]
+    return ids
+
+
+def call_rc_mode_per_id(results_list):
+    """Given a list of dicts (same format as generated in frender_scan_function), for each sample id found, determine whether it should be demuxed with the forward or reverse complement index 2.
+    Returns: a dictionary with each sample id and True (demux with rc index 2) or False (demux with forward index 2)
+    """
+
+    # Must have RC entries
+    assert rc_mode_test(
+        results_list
+    ), "It looks like this frender result csv was not generated with the -rc flag. Either specify a different result csv, or run this command without setting the -rc flag."
+
+    ids = {id: {"f": 0, "rc": 0, "demux_with_rc": ""} for id in get_ids(results_list)}
+
+    for record in results_list:
+        if record["sample_name"] != "":
+            ids[record["sample_name"]]["f"] += int(record["reads"])
+        if record["rc_sample_name"] != "":
+            ids[record["rc_sample_name"]]["rc"] += int(record["reads"])
+
+    for each in ids:
+        if ids[each]["f"] >= ids[each]["rc"]:
+            ids[each]["demux_with_rc"] = False
+        else:
+            ids[each]["demux_with_rc"] = True
+
+    return {a: ids[a]["demux_with_rc"] for a in ids}
+
+
 def frender_scan(
     barcode_assoc_table,
     fastq,
@@ -311,7 +359,7 @@ def frender_scan(
 
     if cores > 1:
         with Pool(processes=cores) as pool:
-            print(f"multiprocessing with {cores} cores")
+            print(f"Multiprocessing with {cores} cores")
             results = pool.starmap(
                 analyze_barcode_wrapper,
                 zip(
@@ -339,11 +387,111 @@ def frender_scan(
             )
         )
 
-    keys = results[0].keys()
-    with open(out_csv_name, "w", newline="") as output_file:
-        dict_writer = csv.DictWriter(output_file, keys)
-        dict_writer.writeheader()
-        dict_writer.writerows(results)
+    if not rc_mode:  # We're done, write out to csv.
+        print(f"Analysis complete! Writing results to {out_csv_name}")
+        keys = results[0].keys()
+        with open(out_csv_name, "w", newline="") as output_file:
+            dict_writer = csv.DictWriter(output_file, keys)
+            dict_writer.writeheader()
+            dict_writer.writerows(results)
+
+    else:
+        # Have preliminary results at this point. Now we can call whether to use forward or rc index 2 for each sample...
+        rc_calls = call_rc_mode_per_id(results)
+        rc_summary_file_name = out_csv_name.replace(
+            "frender-scan-results_", "frender-index-2-calls_"
+        )
+        print("First round of analysis complete.")
+        print(
+            f"Based on the barcodes in the supplied fastq file, the following index 2 sequences will be used\n(also recorded in {rc_summary_file_name}):\n"
+        )
+        print(
+            "Sample Name",
+            "Supplied Index 2",
+            "Final Index 2",
+            "Reverse Complemented?",
+            sep="\t",
+        )
+        for a in rc_calls:
+            index = indexes["id"].index(a)
+            print(
+                a,
+                indexes["idx2"][index],
+                indexes["idx2"][index]
+                if not rc_calls[a]
+                else reverse_complement(indexes["idx2"][index]),
+                "yes" if rc_calls[a] else "no",
+                sep="\t",
+            )
+        with open(rc_summary_file_name, "w", newline="") as output_file:
+            writer = csv.writer(output_file)
+            writer.writerow(
+                [
+                    "sample_name",
+                    "supplied_index_2",
+                    "final_index_2",
+                    "is_reverse_complemented",
+                ]
+            )
+            for a in rc_calls:
+                index = indexes["id"].index(a)
+                writer.writerow(
+                    [
+                        a,
+                        indexes["idx2"][index],
+                        indexes["idx2"][index]
+                        if not rc_calls[a]
+                        else reverse_complement(indexes["idx2"][index]),
+                        "TRUE" if rc_calls[a] else "FALSE",
+                    ]
+                )
+
+        all_idx2 = [
+            reverse_complement(indexes["idx2"][i])
+            if rc_calls[id]
+            else indexes["idx2"][i]
+            for i, id in enumerate(indexes["id"])
+        ]
+
+        print(
+            f"\nRe-analyzing {len(barcode_counter)} barcodes with corrected index 2 sequences...",
+        )
+
+        if cores > 1:
+            with Pool(processes=cores) as pool:
+                print(f"Multiprocessing with {cores} cores")
+                results = pool.starmap(
+                    analyze_barcode_wrapper,
+                    zip(
+                        barcode_counter,
+                        barcode_counter.values(),
+                        repeat(all_idx1),
+                        repeat(all_idx2),
+                        repeat(all_ids),
+                        repeat(num_subs),
+                        repeat(False),
+                    ),
+                )
+
+        else:
+            results = list(
+                map(
+                    analyze_barcode_wrapper,
+                    barcode_counter,
+                    barcode_counter.values(),
+                    repeat(all_idx1),
+                    repeat(all_idx2),
+                    repeat(all_ids),
+                    repeat(num_subs),
+                    repeat(False),
+                )
+            )
+        print(f"Analysis complete! Writing results to {out_csv_name}")
+        keys = results[0].keys()
+        with open(out_csv_name, "w", newline="") as output_file:
+            dict_writer = csv.DictWriter(output_file, keys)
+            dict_writer.writeheader()
+            dict_writer.writerows(results)
 
 
 if __name__ == "__main__":
