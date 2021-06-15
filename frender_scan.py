@@ -75,23 +75,6 @@ def get_indexes(barcode_assoc_table):
     return all_indexes
 
 
-def get_ids(results_list):
-    """Get all sample ids from a list of dicts (format generated in frender_scan function)"""
-
-    # Test whether we're using an rc_mode result list
-    rc_mode = "rc_read_type" in results_list[0].keys()
-
-    ids = []
-
-    for entry in results_list:
-        if rc_mode:
-            if (entry["rc_sample_name"] != "") & (entry["rc_sample_name"] not in ids):
-                ids += [entry["rc_sample_name"]]
-        if (entry["sample_name"] != "") & (entry["sample_name"] not in ids):
-            ids += [entry["sample_name"]]
-    return ids
-
-
 def check_frender_csv(csv_file):
     """Check if csv file is likely to be frender output. Returns True or False."""
     with open(csv_file, newline="") as f:
@@ -111,6 +94,8 @@ def check_frender_csv(csv_file):
 def call_rc_mode_per_id(results_list):
     """Given a list of dicts (format generated in frender_scan_function), for each sample id found, determine whether it should be demuxed with the forward or reverse complement index 2.
     The 'forward' (supplied) index 2 sequence is preferred if it results in an equal or greater number of demuxable reads compared to the reverse compelement index 2 sequence.
+    Also, if forward index 2 results in exactly 0 demuxable sequences, it is assumed that those reads have already been taken out of the 'undetermined' file;
+    in this case, the forward index 2 sequence will be used.
     Returns: a dictionary with each sample id and True (demux with rc index 2) or False (demux with forward index 2)
     """
 
@@ -119,7 +104,9 @@ def call_rc_mode_per_id(results_list):
         "rc_read_type" in results_list[0].keys()
     ), "It looks like this frender result csv was not generated with the -rc flag. Either specify a different result csv, or run this command without setting the -rc flag."
 
-    ids = {id: {"f": 0, "rc": 0, "demux_with_rc": ""} for id in get_ids(results_list)}
+    ids = {
+        id: {"f": 0, "rc": 0, "demux_with_rc": ""} for id in get_indexes(args.b)["id"]
+    }
 
     for record in results_list:
         if record["sample_name"] != "":
@@ -128,7 +115,7 @@ def call_rc_mode_per_id(results_list):
             ids[record["rc_sample_name"]]["rc"] += int(record["reads"])
 
     for each in ids:
-        if ids[each]["f"] >= ids[each]["rc"]:
+        if (ids[each]["f"] >= ids[each]["rc"]) | (ids[each]["f"] == 0):
             ids[each]["demux_with_rc"] = False
         else:
             ids[each]["demux_with_rc"] = True
@@ -567,13 +554,13 @@ if __name__ == "__main__":
             "-d (demultiplex mode) is specified but the csv supplied doesn't look like a frender result csv!"
         )
 
-    if args.d:
-        assert (
-            len(args.f) == 2
-        ), f"Exactly 2 input fastqs must be specified (found {len(args.f)})"
+    # if args.d:
+    #     assert (
+    #         len(args.f) == 2
+    #     ), f"Exactly 2 input fastqs must be specified (found {len(args.f)})"
 
-        print("Writing demultiplexed files...")
-        frender_demux(args.f, read_scan_results(args.b), args.i, args.a, args.rc)
+    #     print("Writing demultiplexed files...")
+    #     frender_demux(args.f, read_scan_results(args.b), args.i, args.a, args.rc)
 
     # Provide a default output file name
     if not args.o:
