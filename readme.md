@@ -59,10 +59,13 @@ Generally, these files are the starting point for subsequent analyses. However, 
 ##### Inputs
 
 * ```-b``` (barcode association table or sample sheet)
-    * Must be in csv format or contain csv formatted data after the line ```[Data]``` (Illumina sample sheets use this format)
-    * You must specify a barcode association table unless you supply ```frender``` with a single directory path that already contains such a file.
-        * If this is the case, the directory will be recursively searched for files that 
-* the other thing
+  * Must be in csv format or contain csv formatted data after the line ```[Data]``` (Illumina sample sheets use this format)
+  * You must specify a barcode association table unless you supply ```frender``` with a single directory path that already contains such a file.
+    * If this is the case, the directory will be recursively searched for ```.csv``` or ```.txt``` files that match ```barcode.*association``` or ```sample.*sheet``` (case insensitive). If multiple files are found, the one with the shortest path will be selected.
+    * If you specify a barcode association table with the ```-b``` option and also supply a directory containing such a file, the explicitly specified file takes precedence
+
+* ```input.fastq.gz``` or ```/path/to/dir``` (input file(s)/directory)
+  * If a directory is specified, it will be search recursively for ```*.fastq.gz``` or ```*.fq.gz``` files. For the purposes of the ```scan``` function, only files matching ```_R1_``` (read 1 files) are used, as the barcodes are identical in both read 1 and read 2.
 
 ##### Options
 
