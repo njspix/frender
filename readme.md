@@ -39,8 +39,8 @@ Generally, these files are the starting point for subsequent analyses. However, 
 
 1. Scan a file, list of files, or directory:
 
-    `python3 ./frender.py scan -n 1 -rc -b barcode_table.csv input.fastq.gz [input2.fastq.gz] [input3.fastq.gz]`
-    `python3 ./frender.py scan -n 1 -rc /path/to/sequencing/directory`
+    * `python3 ./frender.py scan -n 1 -rc -b barcode_table.csv input.fastq.gz [input2.fastq.gz] [input3.fastq.gz]`
+    * `python3 ./frender.py scan -n 1 -rc /path/to/sequencing/directory`
 
     Option|Explanation
     --|--
@@ -49,8 +49,10 @@ Generally, these files are the starting point for subsequent analyses. However, 
     -b | barcode association table, `.csv` format
 
 2. Demultiplex based on scan results:
-    `python3 ./frender.py demux -r frender-scan-results_1-mismatches_sequencing-directory.csv input.fastq.gz [input2.fastq.gz] [input3.fastq.gz]`
-     `python3 ./frender.py demux -r frender-scan-results_1-mismatches_sequencing-directory.csv /path/to/sequencing/directory`
+
+    * `python3 ./frender.py demux -r frender-scan-results_1-mismatches_sequencing-directory.csv input.fastq.gz [input2.fastq.gz] [input3.fastq.gz]`
+    * `python3 ./frender.py demux -r frender-scan-results_1-mismatches_sequencing-directory.csv /path/to/sequencing/directory`
+
     Option|Explanation
     --|--
     -r | `frender` scan result file (contains information necessary for demultiplexing)
