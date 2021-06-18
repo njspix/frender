@@ -512,7 +512,7 @@ def frender_scan(args):
 
         indexes["idx2"] = [
             reverse_complement(indexes["idx2"][i])
-            if rc_calls[id]
+            if rc_calls[id]["call"]
             else indexes["idx2"][i]
             for i, id in enumerate(indexes["id"])
         ]
