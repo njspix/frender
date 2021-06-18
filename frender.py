@@ -28,18 +28,25 @@ def find_barcode_file(dir):
     files = []
     list_of_paths = list(dir.rglob("*"))
     for path in list_of_paths:
-        if bool(re.search(".*barcode.*association.*", str(path), re.IGNORECASE)) | bool(
-            re.search(".*sample.*sheet.*", str(path), re.IGNORECASE)
+        if bool(re.search("barcode.*association", str(path), re.IGNORECASE)) | bool(
+            re.search("sample.*sheet", str(path), re.IGNORECASE)
         ):
             files += [path]
     # If multiple files, pick the one with the shortest path
-    files.sort(reverse=True)
-    if not files:  # No barcode file identified
+
+    filtered_files = []
+
+    for path in files:
+        if bool(re.search("\.csv$|\.txt$", str(path), re.IGNORECASE)):
+            filtered_files += [path]
+    filtered_files.sort(reverse=True)
+
+    if not filtered_files:  # No barcode file identified
         raise SystemExit(
             "I couldn't find a barcode table in that directory. Please either specify one with the argment -b or specify a directory including a barcode table. File names matching '.*barcode.*association.*' or '.*sample.*sheet.*' (case insensitive) are accepted."
         )
-    print(f"Found barcode association file {os.path.basename(files[0])}")
-    return files[0]
+    print(f"Found barcode association file {os.path.basename(filtered_files[0])}")
+    return filtered_files[0]
 
 
 def handle_illumina_csv(barcode_file):
@@ -139,7 +146,7 @@ def parse_files(file_dict, just_r1):
         filtered_paths = [
             path
             for path in filtered_paths
-            if bool(re.search("R1", str(path), re.IGNORECASE))
+            if bool(re.search("_R1_", str(path), re.IGNORECASE))
         ]
 
     return filtered_paths
@@ -513,7 +520,7 @@ def frender_scan(args):
         print(
             f"\nRe-analyzing {len(barcode_counter)} barcodes with corrected index 2 sequences...",
         )
-        results = process(cores, barcode_counter, indexes, num_subs, False)
+        results = process(cores, barcode_counter, indexes, num_subs, rc_mode=False)
         report_analysis(results, out_csv_name)
 
 
