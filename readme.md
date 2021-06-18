@@ -58,7 +58,10 @@ Generally, these files are the starting point for subsequent analyses. However, 
 
 ##### Inputs
 
-* ```-b``` (barcode association table or sample sheet): 
+* ```-b``` (barcode association table or sample sheet)
+    * Must be in csv format or contain csv formatted data after the line ```[Data]``` (Illumina sample sheets use this format)
+    * You must specify a barcode association table unless you supply ```frender``` with a single directory path that already contains such a file.
+        * If this is the case, the directory will be recursively searched for files that 
 * the other thing
 
 ##### Options
