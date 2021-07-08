@@ -100,6 +100,10 @@ Generally, these files are the starting point for subsequent analyses. However, 
 
 * Optional; if specified, this string will be added to the output file name
 
+###### `-p` (prefix to remove)
+
+* Optional; if specified, this string will be removed from the sample id's provided in the barcode association table (for the purpose of calling properly/improperly demuxed)
+
 ##### Outputs
 
 ###### `frender-scan-results_1-mismatches_testdir.csv` (barcode tallies)

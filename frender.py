@@ -472,7 +472,7 @@ def report_analysis(results, out_csv_name):
         dict_writer.writerows(results)
 
 
-def call_barcodes_correctly_distributed(barcode_counter, results):
+def call_barcodes_correctly_distributed(barcode_counter, results, prefix):
     files = list(barcode_counter.keys())
     files.remove("total")
 
@@ -495,18 +495,29 @@ def call_barcodes_correctly_distributed(barcode_counter, results):
                 )  # True if filename matches 'undetermined'; undetermined reads should only be in the undetermined file.
             elif read_type == "index_hop":
                 match = bool(
-                    re.search(re.compile("undetermined|index-hop", re.I), file)
+                    re.search(
+                        re.compile("undetermined|index-hop", re.I),
+                        file,
+                    )
                 )  # True if filename matches 'undetermined' or 'index-hop'; these reads belong in one of these two files
             elif read_type == "ambiguous":
                 match = bool(
-                    re.search(re.compile("undetermined|ambiguous", re.I), file)
+                    re.search(
+                        re.compile("undetermined|ambiguous", re.I),
+                        file,
+                    )
                 )  # similar to above
             else:
                 assert (
                     read_type == "demuxable"
                 ), f"Strange read type ('{read_type}') found"
                 match = bool(
-                    re.search(re.compile(results[barcode]["sample_name"], re.I), file)
+                    re.search(
+                        re.compile(
+                            results[barcode]["sample_name"].removeprefix(prefix), re.I
+                        ),
+                        file,
+                    )
                 )
 
             a.append(
@@ -525,11 +536,12 @@ def call_barcodes_correctly_distributed(barcode_counter, results):
 
 
 def frender_scan(args):
-    # Parse args: n=1, rc=True, c=1.0, o='test_name', b=None, files=['file1', 'file2', 'file3']
+    # Parse args: n=1, rc=True, c=1.0, o='test_name', p=None, b=None, files=['file1', 'file2', 'file3']
     num_subs = args.n
     rc_mode = args.rc
     cores = get_cores(args.c)
     user_infix = args.o if args.o else ""
+    prefix = args.p if args.p else ""
 
     # barcode table must be present unless we can find one in the provided directory
     if args.b == None:
@@ -588,7 +600,7 @@ def frender_scan(args):
         )
 
     results, mismatching_files = call_barcodes_correctly_distributed(
-        barcode_counter, results
+        barcode_counter, results, prefix
     )
 
     if bool(mismatching_files):
@@ -806,6 +818,11 @@ if __name__ == "__main__":
         "-o",
         metavar="output_name",
         help="name infix for output files",
+    )
+    parser_scan.add_argument(
+        "-p",
+        metavar="fix_prefix",
+        help="When matching sample ids to filenames, remove this prefix from the sample id",
     )
     parser_scan.add_argument(
         "-b",
