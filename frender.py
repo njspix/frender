@@ -154,6 +154,14 @@ def parse_files(file_dict, just_r1):
 
 def tally_barcodes(files, sample=None):
     sample = float(sample) if sample else None
+    if sample:
+        if sample >= 1:
+            message = f"Sampling ${sample} reads from the head of each file..."
+        else:
+            mod = round(1 / sample)
+            message = f"Sampling every ${mod}th read from each file"
+        print(message)
+
     barcode_counter = {"total": {}}
     for file in files:
         name = str(os.path.basename(file))
@@ -166,7 +174,6 @@ def tally_barcodes(files, sample=None):
                 if not sample:
                     actually_process = True
                 elif sample < 1:
-                    mod = round(1 / sample)
                     actually_process = bool(reads % mod == 0)
                 elif sample >= 1:
                     actually_process = True
