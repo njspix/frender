@@ -153,10 +153,12 @@ def parse_files(file_dict, just_r1):
 
 
 def tally_barcodes(files):
-    barcode_counter = {}
+    barcode_counter = {"total": {}}
     for file in files:
-        print(f"Tallying barcodes from {str(os.path.basename(file))}...", end="")
+        name = str(os.path.basename(file))
+        print(f"Tallying barcodes from {name}...", end="")
         with gzip.open(file, "rt") as read_file:
+            barcode_counter[name] = {}
             reads, new_barcodes = 0, 0
             for read_head in islice(read_file, 0, None, 4):
                 reads += 1
@@ -164,10 +166,12 @@ def tally_barcodes(files):
                     read_head.rstrip("\n").split(" ")[1].split(":")[-1]
                 )  # works for header format @EAS139:136:FC706VJ:2:2104:15343:197393 1:Y:18:AAAAAAAA+GGGGGGGG
                 try:
-                    barcode_counter[code] += 1
+                    barcode_counter[name][code] += 1
+                    barcode_counter["total"][code] += 1
                 except KeyError:
                     new_barcodes += 1
-                    barcode_counter[code] = 1
+                    barcode_counter[name][code] = 1
+                    barcode_counter["total"][code] = 1
         print(
             f"found {new_barcodes} new barcode{'' if new_barcodes == 1 else 's'} in {reads} reads."
         )
@@ -275,15 +279,8 @@ def analyze_barcodes_with_rc(
     # analyze barcode using supplied idx2
     temp = analyze_barcode(idx1, idx2, all_idx1, all_idx2, all_ids, num_subs)
 
-    result = {
-        "idx1": idx1,
-        "idx2": idx2,
-        "reads": num_reads,
-        "matched_idx1": temp["matched_idx1"],
-        "matched_idx2": temp["matched_idx2"],
-        "read_type": temp["read_type"],
-        "sample_name": temp["sample_name"],
-    }
+    temp["reads"] = num_reads
+    result = temp
 
     if rc_mode:
         rc_all_idx2 = [reverse_complement(i) for i in all_idx2]
@@ -366,35 +363,48 @@ def process(cores, barcode_counter, indexes, num_subs, rc_mode):
     all_idx1 = indexes["idx1"]
     all_idx2 = indexes["idx2"]
     all_ids = indexes["id"]
-    if cores > 1:
-        with Pool(processes=cores) as pool:
-            print(f"Multiprocessing with {cores} cores")
-            results = pool.starmap(
-                analyze_barcodes_with_rc,
-                zip(
-                    barcode_counter,
-                    barcode_counter.values(),
-                    repeat(all_idx1),
-                    repeat(all_idx2),
-                    repeat(all_ids),
-                    repeat(num_subs),
-                    repeat(rc_mode),
-                ),
-            )
+    # if cores > 1:
 
-    else:
-        results = list(
-            map(
-                analyze_barcodes_with_rc,
-                barcode_counter,
-                barcode_counter.values(),
-                repeat(all_idx1),
-                repeat(all_idx2),
-                repeat(all_ids),
-                repeat(num_subs),
-                repeat(rc_mode),
-            )
+    #     with Pool(processes=cores) as pool:
+    #         print(f"Multiprocessing with {cores} cores")
+    #         results = pool.starmap(
+    #             analyze_barcodes_with_rc,
+    #             zip(
+    #                 barcode_counter,
+    #                 barcode_counter.values(),
+    #                 repeat(all_idx1),
+    #                 repeat(all_idx2),
+    #                 repeat(all_ids),
+    #                 repeat(num_subs),
+    #                 repeat(rc_mode),
+    #             ),
+    #         )
+
+    # else:
+    # results = list(
+    #     map(
+    #         analyze_barcodes_with_rc,
+    #         barcode_counter,
+    #         barcode_counter.values(),
+    #         repeat(all_idx1),
+    #         repeat(all_idx2),
+    #         repeat(all_ids),
+    #         repeat(num_subs),
+    #         repeat(rc_mode),
+    #     )
+    # )
+    results = {
+        barcode: analyze_barcodes_with_rc(
+            barcode,
+            barcode_counter[barcode],
+            all_idx1,
+            all_idx2,
+            all_ids,
+            num_subs,
+            rc_mode,
         )
+        for barcode in barcode_counter
+    }
     return results
 
 
@@ -451,6 +461,19 @@ def report_rc_call_info(rc_calls, indexes, out_csv_name):
             )
 
 
+def flatten_results(dict_of_dicts):
+    """Given a dict of dicts in the frender format, 'flatten' it out into a list of dicts."""
+    result = []
+
+    for barcode in dict_of_dicts.keys():
+        d = {"idx1": barcode.split("+")[0], "idx2": barcode.split("+")[1]}
+        for key, val in dict_of_dicts[barcode].items():
+            d[key] = val
+        result.append(d)
+
+    return result
+
+
 def report_analysis(results, out_csv_name):
     print(f"Analysis complete! Writing results to {out_csv_name}")
     keys = results[0].keys()
@@ -458,6 +481,58 @@ def report_analysis(results, out_csv_name):
         dict_writer = csv.DictWriter(output_file, keys)
         dict_writer.writeheader()
         dict_writer.writerows(results)
+
+
+def call_barcodes_correctly_distributed(barcode_counter, results):
+    files = list(barcode_counter.keys())
+    files.remove("total")
+
+    mismatching_files = set()
+
+    for barcode in list(results.keys()):
+        read_type = results[barcode]["read_type"]
+        a = []
+        for file in files:
+            # How many reads of this barcode in this file?
+            try:
+                reads = barcode_counter[file][barcode]
+            except KeyError:
+                reads = 0
+
+            # Should this barcode be in this file?
+            if read_type == "undetermined":
+                match = bool(
+                    re.search(re.compile("undetermined", re.I), file)
+                )  # True if filename matches 'undetermined'; undetermined reads should only be in the undetermined file.
+            elif read_type == "index_hop":
+                match = bool(
+                    re.search(re.compile("undetermined|index-hop", re.I), file)
+                )  # True if filename matches 'undetermined' or 'index-hop'; these reads belong in one of these two files
+            elif read_type == "ambiguous":
+                match = bool(
+                    re.search(re.compile("undetermined|ambiguous", re.I), file)
+                )  # similar to above
+            else:
+                assert (
+                    read_type == "demuxable"
+                ), f"Strange read type ('{read_type}') found"
+                match = bool(
+                    re.search(re.compile(results[barcode]["sample_name"], re.I), file)
+                )
+
+            a.append(
+                (not (bool(reads))) | match
+            )  # ok if there are zero reads OR it is a match
+            good_demux = bool(len(a) == sum(a))
+            results[barcode]["demux_ok"] = good_demux
+
+        [
+            mismatching_files.add(files[index])
+            for index, match in enumerate(a)
+            if not match
+        ]
+
+    return (results, mismatching_files)
 
 
 def frender_scan(args):
@@ -493,20 +568,19 @@ def frender_scan(args):
         out_csv_name = f"frender-scan-results_{num_subs}-mismatches_{user_infix}_{datetime.strftime(datetime.now(timezone.utc), '%Y-%M-%d_%H%M_%Z')}.csv"
 
     out_csv_name = out_csv_name.replace("__", "_")
+
     # Filter out non-fastq files (and Read 2 files, if scanning dir...)
     files = parse_files(files, just_r1=True)
+
     barcode_counter = tally_barcodes(files)
     print(
-        f"Scanning complete! Analyzing {len(barcode_counter)} barcodes...",
+        f"Scanning complete! Analyzing barcodes...",
     )
-    results = process(cores, barcode_counter, indexes, num_subs, rc_mode)
+    results = process(cores, barcode_counter["total"], indexes, num_subs, rc_mode)
 
-    if not rc_mode:  # We're done, write out to csv.
-        report_analysis(results, out_csv_name)
-
-    else:
+    if rc_mode:
         # Have preliminary results at this point. Now we can call whether to use forward or rc index 2 for each sample...
-        rc_calls = call_rc_mode_per_id(results, indexes["id"])
+        rc_calls = call_rc_mode_per_id(flatten_results(results), indexes["id"])
         print("First round of analysis complete.")
         report_rc_call_info(rc_calls, indexes, out_csv_name)
 
@@ -518,10 +592,23 @@ def frender_scan(args):
         ]
 
         print(
-            f"\nRe-analyzing {len(barcode_counter)} barcodes with corrected index 2 sequences...",
+            f"\nRe-analyzing barcodes with corrected index 2 sequences...",
         )
-        results = process(cores, barcode_counter, indexes, num_subs, rc_mode=False)
-        report_analysis(results, out_csv_name)
+        results = process(
+            cores, barcode_counter["total"], indexes, num_subs, rc_mode=False
+        )
+
+    results, mismatching_files = call_barcodes_correctly_distributed(
+        barcode_counter, results
+    )
+
+    if bool(mismatching_files):
+        print("Incorrectly demultiplexed barcodes found! Affected files:")
+        {print(a) for a in mismatching_files}
+    else:
+        print("It appears that all files are already correctly demultiplexed.")
+
+    report_analysis(flatten_results(results), out_csv_name)
 
 
 def parse_results_file(result_file):
