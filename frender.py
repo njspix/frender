@@ -363,48 +363,37 @@ def process(cores, barcode_counter, indexes, num_subs, rc_mode):
     all_idx1 = indexes["idx1"]
     all_idx2 = indexes["idx2"]
     all_ids = indexes["id"]
-    # if cores > 1:
+    if cores > 1:
 
-    #     with Pool(processes=cores) as pool:
-    #         print(f"Multiprocessing with {cores} cores")
-    #         results = pool.starmap(
-    #             analyze_barcodes_with_rc,
-    #             zip(
-    #                 barcode_counter,
-    #                 barcode_counter.values(),
-    #                 repeat(all_idx1),
-    #                 repeat(all_idx2),
-    #                 repeat(all_ids),
-    #                 repeat(num_subs),
-    #                 repeat(rc_mode),
-    #             ),
-    #         )
+        with Pool(processes=cores) as pool:
+            print(f"Multiprocessing with {cores} cores")
+            temp = pool.starmap(
+                analyze_barcodes_with_rc,
+                zip(
+                    barcode_counter,
+                    barcode_counter.values(),
+                    repeat(all_idx1),
+                    repeat(all_idx2),
+                    repeat(all_ids),
+                    repeat(num_subs),
+                    repeat(rc_mode),
+                ),
+            )
+            results = dict(zip(barcode_counter.keys(), temp))
 
-    # else:
-    # results = list(
-    #     map(
-    #         analyze_barcodes_with_rc,
-    #         barcode_counter,
-    #         barcode_counter.values(),
-    #         repeat(all_idx1),
-    #         repeat(all_idx2),
-    #         repeat(all_ids),
-    #         repeat(num_subs),
-    #         repeat(rc_mode),
-    #     )
-    # )
-    results = {
-        barcode: analyze_barcodes_with_rc(
-            barcode,
-            barcode_counter[barcode],
-            all_idx1,
-            all_idx2,
-            all_ids,
-            num_subs,
-            rc_mode,
-        )
-        for barcode in barcode_counter
-    }
+    else:
+        results = {
+            barcode: analyze_barcodes_with_rc(
+                barcode,
+                barcode_counter[barcode],
+                all_idx1,
+                all_idx2,
+                all_ids,
+                num_subs,
+                rc_mode,
+            )
+            for barcode in barcode_counter
+        }
     return results
 
 
