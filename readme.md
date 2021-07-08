@@ -77,9 +77,10 @@ Generally, these files are the starting point for subsequent analyses. However, 
 
 ###### `-c` (cores)
 
+(default: `1`)
 * `0`: use all available cores
 * `0 < c < 1`: use a fraction of available cores (e.g. `-c 0.5` would use 4 cores on an 8-core machine)
-* `c ≥ 1`: use the specified number of cores
+* `c ≥ 1`: use the specified number of cores 
 
 ###### `-n` (number of mismatches)
 
@@ -106,10 +107,10 @@ Generally, these files are the starting point for subsequent analyses. However, 
 A data file containing the following metrics for each unique combination of barcodes discovered in the scanned `fastq` files:
 
 ```txt
-idx1,idx2,reads,matched_idx1,matched_idx2,read_type,sample_name
-GATCAGCG,CTTGTAAT,1000000,GATCAGCG,CTTGTAAT,demuxable,FT-SA49186
-NTCACGTT,NTCACGAT,59,ATCACGTT,ATCACGAT,index_hop,
-NTCCCGTT,NAGATCAT,59,,,undetermined,
+idx1,idx2,reads,matched_idx1,matched_idx2,read_type,sample_name,demux_ok
+GATCAGCG,CTTGTAAT,1000000,GATCAGCG,CTTGTAAT,demuxable,FT-SA49186,False
+NTCACGTT,NTCACGAT,59,ATCACGTT,ATCACGAT,index_hop,True
+NTCCCGTT,NAGATCAT,59,,,undetermined,True
 ```
 
 `reads` refers to the total number of reads that possess the specified `idx1` and `idx2`, summed over all the provided input files.
@@ -120,6 +121,16 @@ Possible `read_type`s are:
 * `index_hop`: this barcode combination matches at least one of the supplied index 1s and at least one of the supplied index 2s, but none of the matched indexes are associated with the same sample.
 * `ambiguous`: this barcode combination matches the indexes assigned to more than one sample
 * `undetermined`: none of the above conditions are met
+
+If `idx1` and `idx2` can be unambiguously assigned to a sample in the provided barcode association table, `sample_name` is populated accordingly. This field is blank for all other reads.
+
+After analyzing all supplied files and the barcodes found in them, `frender` will determine if the barcodes are correctly distributed among the provided files according to the following rules:
+
+* `Index-hop` and `ambiguous` reads are found _only_ in files whose names match `index-hop` and `ambiguous` (case-insensitive), respectively, or in a file whose name matches `undetermined` (case-insensitive).
+* `Undetermined` reads are found _only_ in a file whose name matches `undetermined` (case-insensitive).
+* `Demuxable` reads are found _only_ in a file whose name matches the sample id in the barcode association file.
+
+If `frender` detects any incorrectly demuxed reads, a warning will be issued and the `demux_ok` flag will be set to 'False' for that barcode. A list of incorrectly demuxed files will also be printed to the terminal.
 
 ###### `frender-index-2-calls_1-mismatches_testdir.csv` (Index 2 calls)
 
