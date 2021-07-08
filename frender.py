@@ -168,18 +168,22 @@ def tally_barcodes(files, sample=None):
         print(f"Tallying barcodes from {name}...", end="")
         with gzip.open(file, "rt") as read_file:
             barcode_counter[name] = {}
-            reads, new_barcodes = 0, 0
+            actual_reads, used_reads, new_barcodes = 0, 0, 0
             for read_head in islice(read_file, 0, None, 4):
 
                 if not sample:
                     actually_process = True
                 elif sample < 1:
-                    actually_process = bool(reads % mod == 0)
+                    actually_process = bool(actual_reads % mod == 0)
+                    if actually_process:
+                        used_reads += 1
                 elif sample >= 1:
                     actually_process = True
-                    if reads >= sample:
+                    if actual_reads >= sample:
                         break
-                reads += 1
+                    used_reads += 1
+
+                actual_reads += 1
 
                 if actually_process:
                     code = (
@@ -193,7 +197,7 @@ def tally_barcodes(files, sample=None):
                         barcode_counter[name][code] = 1
                         barcode_counter["total"][code] = 1
         print(
-            f"found {new_barcodes} new barcode{'' if new_barcodes == 1 else 's'} in {reads} reads."
+            f"found {new_barcodes} new barcode{'' if new_barcodes == 1 else 's'} in {used_reads if sample else actual_reads} reads."
         )
     return barcode_counter
 
