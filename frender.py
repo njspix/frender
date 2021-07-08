@@ -152,7 +152,8 @@ def parse_files(file_dict, just_r1):
     return filtered_paths
 
 
-def tally_barcodes(files):
+def tally_barcodes(files, sample=None):
+    sample = float(sample) if sample else None
     barcode_counter = {"total": {}}
     for file in files:
         name = str(os.path.basename(file))
@@ -161,17 +162,29 @@ def tally_barcodes(files):
             barcode_counter[name] = {}
             reads, new_barcodes = 0, 0
             for read_head in islice(read_file, 0, None, 4):
+
+                if not sample:
+                    actually_process = True
+                elif sample < 1:
+                    mod = round(1 / sample)
+                    actually_process = bool(reads % mod == 0)
+                elif sample >= 1:
+                    actually_process = True
+                    if reads >= sample:
+                        break
                 reads += 1
-                code = (
-                    read_head.rstrip("\n").split(" ")[1].split(":")[-1]
-                )  # works for header format @EAS139:136:FC706VJ:2:2104:15343:197393 1:Y:18:AAAAAAAA+GGGGGGGG
-                try:
-                    barcode_counter[name][code] += 1
-                    barcode_counter["total"][code] += 1
-                except KeyError:
-                    new_barcodes += 1
-                    barcode_counter[name][code] = 1
-                    barcode_counter["total"][code] = 1
+
+                if actually_process:
+                    code = (
+                        read_head.rstrip("\n").split(" ")[1].split(":")[-1]
+                    )  # works for header format @EAS139:136:FC706VJ:2:2104:15343:197393 1:Y:18:AAAAAAAA+GGGGGGGG
+                    try:
+                        barcode_counter[name][code] += 1
+                        barcode_counter["total"][code] += 1
+                    except KeyError:
+                        new_barcodes += 1
+                        barcode_counter[name][code] = 1
+                        barcode_counter["total"][code] = 1
         print(
             f"found {new_barcodes} new barcode{'' if new_barcodes == 1 else 's'} in {reads} reads."
         )
@@ -536,10 +549,11 @@ def call_barcodes_correctly_distributed(barcode_counter, results, prefix):
 
 
 def frender_scan(args):
-    # Parse args: n=1, rc=True, c=1.0, o='test_name', p=None, b=None, files=['file1', 'file2', 'file3']
+    # Parse args: n=1, rc=True, c=1.0, s=None, o='test_name', p=None, b=None, files=['file1', 'file2', 'file3']
     num_subs = args.n
     rc_mode = args.rc
     cores = get_cores(args.c)
+    sample = args.s
     user_infix = args.o if args.o else ""
     prefix = args.p if args.p else ""
 
@@ -573,7 +587,7 @@ def frender_scan(args):
     # Filter out non-fastq files (and Read 2 files, if scanning dir...)
     files = parse_files(files, just_r1=True)
 
-    barcode_counter = tally_barcodes(files)
+    barcode_counter = tally_barcodes(files, sample)
     print(
         f"Scanning complete! Analyzing barcodes...",
     )
@@ -813,6 +827,11 @@ if __name__ == "__main__":
         type=float,
         default=1,
         help="Number of cores to use for analysis, default = 1. Use 0 for all available, a number between 0 and 1 for a fraction of all available cores, or a number >= 1 for a specified number of cores",
+    )
+    parser_scan.add_argument(
+        "-s",
+        metavar="sample",
+        help="If set, sample an absolute number of reads from each file (s >= 1) or a proportion of reads from the file (s < 1)",
     )
     parser_scan.add_argument(
         "-o",
