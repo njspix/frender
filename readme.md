@@ -96,6 +96,10 @@ Generally, these files are the starting point for subsequent analyses. However, 
     FT-SA49175|ACTTGAAT|3374|ATTCAAGT|0|forward
     FT-SA49189|ATGATCTG|1|CAGATCAT|1021281|reverse complement
 
+###### `-s` (sample)
+
+* Optional; if specified, only some of the reads in each file will be sampled. If `s ≥ 1`, an absolute number of reads will be sampled from the head of the file (files with fewer reads will be sampled in their entirety). If `s < 1`, a proportion of reads will be sampled evenly from the file (`-s 0.5` will sample every other read)
+
 ###### `-o` (output infix)
 
 * Optional; if specified, this string will be added to the output file name
