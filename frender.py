@@ -159,7 +159,7 @@ def tally_barcodes(files, sample=None):
             message = f"Sampling ${sample} reads from the head of each file..."
         else:
             mod = round(1 / sample)
-            message = f"Sampling every ${mod}th read from each file"
+            message = f"Sampling every {mod}th read from each file"
         print(message)
 
     barcode_counter = {"total": {}}
