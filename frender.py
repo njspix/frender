@@ -153,14 +153,9 @@ def parse_files(file_dict, just_r1):
 
 
 def tally_barcodes(files, sample=None):
-    sample = float(sample) if sample else None
     if sample:
-        if sample >= 1:
-            message = f"Sampling ${sample} reads from the head of each file..."
-        else:
-            mod = round(1 / sample)
-            message = f"Sampling every {mod}th read from each file"
-        print(message)
+        assert sample >= 1, f"Number of reads to sample must be ≥ 1!"
+        print(f"Sampling {sample} reads from the head of each file...")
 
     barcode_counter = {"total": {}}
     for file in files:
@@ -168,36 +163,26 @@ def tally_barcodes(files, sample=None):
         print(f"Tallying barcodes from {name}...", end="")
         with gzip.open(file, "rt") as read_file:
             barcode_counter[name] = {}
-            actual_reads, used_reads, new_barcodes = 0, 0, 0
+            actual_reads, new_barcodes = 0, 0
             for read_head in islice(read_file, 0, None, 4):
 
-                if not sample:
-                    actually_process = True
-                elif sample < 1:
-                    actually_process = bool(actual_reads % mod == 0)
-                    if actually_process:
-                        used_reads += 1
-                elif sample >= 1:
-                    actually_process = True
+                if sample:
                     if actual_reads >= sample:
                         break
-                    used_reads += 1
-
                 actual_reads += 1
 
-                if actually_process:
-                    code = (
-                        read_head.rstrip("\n").split(" ")[1].split(":")[-1]
-                    )  # works for header format @EAS139:136:FC706VJ:2:2104:15343:197393 1:Y:18:AAAAAAAA+GGGGGGGG
-                    try:
-                        barcode_counter[name][code] += 1
-                        barcode_counter["total"][code] += 1
-                    except KeyError:
-                        new_barcodes += 1
-                        barcode_counter[name][code] = 1
-                        barcode_counter["total"][code] = 1
+                code = (
+                    read_head.rstrip("\n").split(" ")[1].split(":")[-1]
+                )  # works for header format @EAS139:136:FC706VJ:2:2104:15343:197393 1:Y:18:AAAAAAAA+GGGGGGGG
+                try:
+                    barcode_counter[name][code] += 1
+                    barcode_counter["total"][code] += 1
+                except KeyError:
+                    new_barcodes += 1
+                    barcode_counter[name][code] = 1
+                    barcode_counter["total"][code] = 1
         print(
-            f"found {new_barcodes} new barcode{'' if new_barcodes == 1 else 's'} in {used_reads if sample else actual_reads} reads."
+            f"found {new_barcodes} new barcode{'' if new_barcodes == 1 else 's'} in {actual_reads} reads."
         )
     return barcode_counter
 
@@ -842,7 +827,8 @@ if __name__ == "__main__":
     parser_scan.add_argument(
         "-s",
         metavar="sample",
-        help="If set, sample an absolute number of reads from each file (s >= 1) or a proportion of reads from the file (s < 1)",
+        type=int,
+        help="If set, sample an absolute number of reads from the head of each file (s >= 1)",
     )
     parser_scan.add_argument(
         "-o",

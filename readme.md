@@ -98,7 +98,7 @@ Generally, these files are the starting point for subsequent analyses. However, 
 
 ###### `-s` (sample)
 
-* Optional; if specified, only some of the reads in each file will be sampled. If `s ≥ 1`, an absolute number of reads will be sampled from the head of the file (files with fewer reads will be sampled in their entirety). If `s < 1`, a proportion of reads will be sampled evenly from the file (`-s 0.5` will sample every other read)
+* Optional; if specified, only the first `n` reads in the file (s) will be examined.
 
 ###### `-o` (output infix)
 
