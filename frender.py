@@ -26,7 +26,7 @@ def find_barcode_file(dir):
     dir = Path(dir)
     assert Path.is_dir(dir), "The specified directory does not exist"
     files = []
-    list_of_paths = list(dir.rglob("*"))
+    list_of_paths = list(dir.rglob("**/*"))
     for path in list_of_paths:
         if bool(re.search("barcode.*association", str(path), re.IGNORECASE)) | bool(
             re.search("sample.*sheet", str(path), re.IGNORECASE)
@@ -122,7 +122,7 @@ def parse_files(file_dict, just_r1):
         print(
             f"Scanning {file_dict['dir']} for fastq files. {'Using read 1 files only for speed...' if just_r1 else ''}"
         )
-        for each in Path(file_dict["dir"]).rglob("*"):
+        for each in Path(file_dict["dir"]).rglob("**/*"):
             if Path.is_file(each):
                 paths += [each]
     elif list(file_dict.keys())[0] == "file":
@@ -146,44 +146,64 @@ def parse_files(file_dict, just_r1):
         filtered_paths = [
             path
             for path in filtered_paths
-            if bool(re.search("_R1_", str(path), re.IGNORECASE))
+            if bool(re.search("R1", str(os.path.basename(path)), re.IGNORECASE))
         ]
-
     return filtered_paths
 
 
-def tally_barcodes(files, sample=None):
+def scan_file(file, sample = None):
+    file_barcodes = {}
+    total_barcodes = {}
+    name = str(os.path.basename(file))
+    print(f"Tallying barcodes from {name}...", end="")
+    with gzip.open(file, "rt") as read_file:
+        actual_reads, new_barcodes = 0, 0
+        for read_head in islice(read_file, 0, None, 4):
+
+            if sample:
+                if actual_reads >= sample:
+                    break
+            actual_reads += 1
+
+            code = (
+                read_head.rstrip("\n").split(" ")[1].split(":")[-1]
+            )  # works for header format @EAS139:136:FC706VJ:2:2104:15343:197393 1:Y:18:AAAAAAAA+GGGGGGGG
+            try:
+                file_barcodes[code] += 1
+                total_barcodes[code] += 1
+            except KeyError:
+                new_barcodes += 1
+                file_barcodes[code] = 1
+                total_barcodes[code] = 1
+    print(
+        f"found {new_barcodes} new barcode{'' if new_barcodes == 1 else 's'} in {actual_reads} reads."
+    )
+    return (name, file_barcodes, total_barcodes)
+
+def tally_barcodes(cores, files, sample=None):
+    print(f"Scanning {len(files)} files with {cores} core{'' if cores == 1 else 's'}...")
     if sample:
         assert sample >= 1, f"Number of reads to sample must be ≥ 1!"
         print(f"Sampling {sample} reads from the head of each file...")
 
+    if cores > 1:
+        with Pool(processes=cores) as pool:
+            results = pool.starmap(
+                scan_file, [(file, sample) for file in files]
+            )
+        print(type(results), len(results))
+    else:
+        results = [scan_file(file, sample = sample) for file in files]
+        print(type(results), len(results))
+
+    # combine all the 'total_barcodes' dictionaries into one dictionary, adding the values for any duplicate keys
     barcode_counter = {"total": {}}
-    for file in files:
-        name = str(os.path.basename(file))
-        print(f"Tallying barcodes from {name}...", end="")
-        with gzip.open(file, "rt") as read_file:
-            barcode_counter[name] = {}
-            actual_reads, new_barcodes = 0, 0
-            for read_head in islice(read_file, 0, None, 4):
+    for d in [x[2] for x in results]:
+        for k, v in d.items():
+            barcode_counter["total"][k] = barcode_counter["total"].get(k, 0) + v
+    for each in results:
+        barcode_counter[each[0]] = each[1]
 
-                if sample:
-                    if actual_reads >= sample:
-                        break
-                actual_reads += 1
-
-                code = (
-                    read_head.rstrip("\n").split(" ")[1].split(":")[-1]
-                )  # works for header format @EAS139:136:FC706VJ:2:2104:15343:197393 1:Y:18:AAAAAAAA+GGGGGGGG
-                try:
-                    barcode_counter[name][code] += 1
-                    barcode_counter["total"][code] += 1
-                except KeyError:
-                    new_barcodes += 1
-                    barcode_counter[name][code] = 1
-                    barcode_counter["total"][code] = 1
-        print(
-            f"found {new_barcodes} new barcode{'' if new_barcodes == 1 else 's'} in {actual_reads} reads."
-        )
     return barcode_counter
 
 
@@ -583,7 +603,7 @@ def frender_scan(args):
     # Filter out non-fastq files (and Read 2 files, if scanning dir...)
     files = parse_files(files, just_r1=True)
 
-    barcode_counter = tally_barcodes(files, sample)
+    barcode_counter = tally_barcodes(cores, files, sample)
     print(
         f"Scanning complete! Analyzing barcodes...",
     )
